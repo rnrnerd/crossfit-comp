@@ -421,6 +421,16 @@
       toast('Сохранено'); resetHeatForm(); loadHeats();
     };
 
+    // авто-маска чч:мм для полей времени в заходах
+    function timeMask(el){
+      if(!el) return;
+      el.addEventListener('input', ()=>{
+        let dg = el.value.replace(/\D/g,'').slice(0,4);
+        el.value = dg.length>2 ? dg.slice(0,dg.length-2)+':'+dg.slice(-2) : dg;
+      });
+    }
+    ['heat-bs','heat-be','heat-start'].forEach(id=>timeMask($(id)));
+
     // авто-вход, если пароль уже в сессии
     if(PW){ tryLogin(PW).then(ok=>{ if(ok) enterApp(); else { sessionStorage.removeItem('admin_pw'); PW=''; } }); }
   </script>
