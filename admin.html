@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Админка · Битва за Херсонес 2026</title>
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root { --bg:#0e0f12; --surface:#16181d; --surface2:#1d2027; --border:#2a2e37; --text:#f2f3f5; --hint:#8b909c; --gold:#f2c440; --accent:#e0533d; --green:#3fae6b; }
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body { font-family:'Inter',sans-serif; background:var(--bg); color:var(--text); }
+    h1,h2,h3,.osw { font-family:'Oswald',sans-serif; }
+    a { color:var(--gold); }
+
+    /* Логин */
+    .login-wrap { min-height:100vh; display:flex; align-items:center; justify-content:center; }
+    .login-box { background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:32px; width:340px; }
+    .login-box h1 { font-size:20px; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px; }
+    .login-box p { color:var(--hint); font-size:13px; margin-bottom:20px; }
+    input, select, textarea { font-family:'Inter',sans-serif; font-size:14px; background:var(--surface2); border:1px solid var(--border); color:var(--text); border-radius:10px; padding:10px 12px; width:100%; }
+    input:focus, select:focus, textarea:focus { outline:none; border-color:var(--gold); }
+    .btn { font-family:'Oswald',sans-serif; font-weight:600; letter-spacing:.5px; text-transform:uppercase; font-size:13px; background:var(--gold); color:#1a1a1a; border:none; border-radius:10px; padding:11px 18px; cursor:pointer; }
+    .btn:hover { filter:brightness(1.05); }
+    .btn.ghost { background:transparent; color:var(--text); border:1px solid var(--border); }
+    .btn.danger { background:transparent; color:var(--accent); border:1px solid rgba(224,83,61,.5); }
+    .btn.sm { padding:7px 11px; font-size:11px; }
+    .err { color:var(--accent); font-size:13px; margin-top:10px; min-height:18px; }
+
+    /* Каркас */
+    .app { display:none; max-width:1100px; margin:0 auto; padding:0 20px 60px; }
+    .topbar { display:flex; align-items:center; justify-content:space-between; padding:18px 0; border-bottom:1px solid var(--border); margin-bottom:22px; position:sticky; top:0; background:var(--bg); z-index:5; }
+    .topbar .title { font-family:'Oswald',sans-serif; font-weight:700; text-transform:uppercase; letter-spacing:1px; font-size:18px; }
+    .topbar .title span { color:var(--gold); }
+    .tabs { display:flex; gap:8px; margin-bottom:24px; }
+    .tab { font-family:'Oswald',sans-serif; font-weight:600; text-transform:uppercase; letter-spacing:.5px; font-size:13px; background:var(--surface); border:1px solid var(--border); color:var(--hint); border-radius:10px; padding:10px 16px; cursor:pointer; }
+    .tab.active { background:var(--gold); color:#1a1a1a; border-color:var(--gold); }
+    .pane { display:none; }
+    .pane.active { display:block; }
+
+    .panel { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:18px; margin-bottom:18px; }
+    .panel h2 { font-size:15px; text-transform:uppercase; letter-spacing:1px; margin-bottom:16px; }
+    .row { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; }
+    .field { display:flex; flex-direction:column; gap:6px; }
+    .field label { font-size:11px; letter-spacing:.5px; text-transform:uppercase; color:var(--hint); }
+    .field.grow { flex:1; min-width:160px; }
+    .checks { display:flex; gap:14px; align-items:center; }
+    .checks label { display:flex; gap:6px; align-items:center; font-size:13px; color:var(--text); text-transform:none; letter-spacing:0; }
+    .checks input { width:auto; }
+
+    table { width:100%; border-collapse:collapse; }
+    th, td { text-align:left; padding:10px 8px; border-bottom:1px solid var(--border); font-size:13px; vertical-align:middle; }
+    th { font-family:'Oswald',sans-serif; font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--hint); }
+    td input.cell { width:80px; text-align:center; padding:7px; }
+    .cellpts { font-size:11px; color:var(--gold); text-align:center; margin-top:3px; font-family:'Oswald',sans-serif; }
+    .muted { color:var(--hint); font-size:12px; }
+    .total { font-family:'Oswald',sans-serif; font-weight:700; color:var(--gold); }
+    .toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--green); color:#08210f; font-weight:600; font-size:13px; padding:10px 18px; border-radius:10px; opacity:0; transition:opacity .2s; pointer-events:none; }
+    .toast.show { opacity:1; }
+    .lane-row { display:flex; gap:8px; margin-bottom:8px; }
+    .lane-row input.lane { width:80px; }
+  </style>
+</head>
+<body>
+  <!-- ЛОГИН -->
+  <div class="login-wrap" id="login">
+    <div class="login-box">
+      <h1>Админка</h1>
+      <p>Битва за Херсонес 2026</p>
+      <div class="field"><label>Пароль</label><input type="password" id="pw" placeholder="введите пароль" /></div>
+      <div class="err" id="login-err"></div>
+      <button class="btn" id="login-btn" style="width:100%;margin-top:8px;">Войти</button>
+    </div>
+  </div>
+
+  <!-- ПРИЛОЖЕНИЕ -->
+  <div class="app" id="app">
+    <div class="topbar">
+      <div class="title">Битва за Херсонес <span>· Админка</span></div>
+      <button class="btn ghost sm" id="logout">Выйти</button>
+    </div>
+    <div class="tabs">
+      <button class="tab active" data-pane="wods">Комплексы</button>
+      <button class="tab" data-pane="scores">Баллы</button>
+      <button class="tab" data-pane="heats">Заходы</button>
+    </div>
+
+    <!-- КОМПЛЕКСЫ -->
+    <div class="pane active" id="pane-wods">
+      <div class="panel">
+        <h2 id="wod-form-title">Добавить комплекс</h2>
+        <input type="hidden" id="wod-id" />
+        <div class="row">
+          <div class="field grow"><label>Название</label><input id="wod-name" placeholder="Комплекс 1 — «Открытие»" /></div>
+          <div class="field"><label>Порядок</label><input id="wod-order" type="number" style="width:90px" value="1" /></div>
+          <div class="field"><label>День</label><select id="wod-day"><option>8 августа</option><option>9 августа</option></select></div>
+        </div>
+        <div class="row" style="margin-top:12px">
+          <div class="field"><label>Тип результата</label><select id="wod-rtype">
+            <option value="time">Время (меньше = лучше)</option>
+            <option value="reps">Повторения (больше = лучше)</option>
+            <option value="weight">Вес (больше = лучше)</option>
+          </select></div>
+          <div class="field grow"><label>Скоринг (текст)</label><input id="wod-scoring" placeholder="На время / AMRAP 10 мин" /></div>
+          <div class="field"><label>Тайм-кап</label><input id="wod-cap" style="width:110px" placeholder="12:00" /></div>
+        </div>
+        <div class="row" style="margin-top:12px">
+          <div class="field"><label>Категории (пусто = все)</label><div class="checks" id="wod-cats"></div></div>
+          <div class="field"><label>Пол (пусто = все)</label><div class="checks" id="wod-genders"></div></div>
+        </div>
+        <div class="field grow" style="margin-top:12px"><label>Описание</label><textarea id="wod-desc" rows="4" placeholder="21-15-9:&#10;Трастеры…"></textarea></div>
+        <div class="row" style="margin-top:14px">
+          <button class="btn" id="wod-save">Сохранить</button>
+          <button class="btn ghost" id="wod-reset">Очистить</button>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Список комплексов</h2>
+        <table><thead><tr><th>#</th><th>Название</th><th>День</th><th>Результат</th><th>Кап</th><th>Кат.</th><th>Пол</th><th></th></tr></thead>
+          <tbody id="wods-tbody"></tbody></table>
+      </div>
+    </div>
+
+    <!-- БАЛЛЫ -->
+    <div class="pane" id="pane-scores">
+      <div class="panel">
+        <h2>Начисление баллов</h2>
+        <div class="row">
+          <div class="field"><label>Категория</label><select id="sc-cat"></select></div>
+          <div class="field"><label>Пол</label><select id="sc-gender"></select></div>
+          <button class="btn ghost" id="sc-load">Показать</button>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Добавить атлета</h2>
+        <div class="row">
+          <div class="field grow"><label>ФИО</label><input id="sc-new-name" placeholder="Иванов Иван" /></div>
+          <button class="btn" id="sc-add-athlete">Добавить</button>
+        </div>
+        <p class="muted" style="margin-top:8px">Атлет добавится в выбранные сверху категорию и пол.</p>
+      </div>
+      <div class="panel">
+        <h2>Результаты <span class="muted" id="sc-context"></span></h2>
+        <p class="muted" style="margin-bottom:10px">Вводи сырой результат за каждый комплекс (время «мм:сс», вес в кг, повторения). Баллы и места считаются автоматически по результатам, под ячейкой — начисленные баллы.</p>
+        <table><thead><tr id="sc-head"></tr></thead><tbody id="sc-tbody"></tbody></table>
+      </div>
+    </div>
+
+    <!-- ЗАХОДЫ -->
+    <div class="pane" id="pane-heats">
+      <div class="panel">
+        <h2 id="heat-form-title">Добавить заход</h2>
+        <input type="hidden" id="heat-id" />
+        <div class="row">
+          <div class="field grow"><label>Комплекс</label><input id="heat-wod" list="wod-names" placeholder="Комплекс 1 — «Открытие»" /><datalist id="wod-names"></datalist></div>
+          <div class="field"><label>№ захода</label><input id="heat-num" type="number" style="width:90px" value="1" /></div>
+          <div class="field"><label>День</label><select id="heat-day"><option>8 августа</option><option>9 августа</option></select></div>
+        </div>
+        <div class="row" style="margin-top:12px">
+          <div class="field"><label>Категория</label><select id="heat-cat"></select></div>
+          <div class="field"><label>Пол</label><select id="heat-gender"></select></div>
+          <div class="field"><label>Площадка</label><input id="heat-loc" placeholder="Площадка A" /></div>
+        </div>
+        <div class="row" style="margin-top:12px">
+          <div class="field"><label>Брифинг с</label><input id="heat-bs" style="width:90px" placeholder="09:40" /></div>
+          <div class="field"><label>Брифинг по</label><input id="heat-be" style="width:90px" placeholder="09:55" /></div>
+          <div class="field"><label>Старт</label><input id="heat-start" style="width:90px" placeholder="09:55" /></div>
+        </div>
+        <div style="margin-top:16px">
+          <label style="font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:var(--hint)">Состав (дорожка · атлет)</label>
+          <div id="heat-lanes" style="margin-top:8px"></div>
+          <datalist id="heat-athlete-names"></datalist>
+          <button class="btn ghost sm" id="heat-add-lane">+ дорожка</button>
+          <span class="muted" id="heat-athlete-hint" style="margin-left:10px"></span>
+        </div>
+        <div class="row" style="margin-top:14px">
+          <button class="btn" id="heat-save">Сохранить</button>
+          <button class="btn ghost" id="heat-reset">Очистить</button>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Список заходов</h2>
+        <table><thead><tr><th>Комплекс</th><th>№</th><th>День</th><th>Кат./Пол</th><th>Старт</th><th>Площадка</th><th></th></tr></thead>
+          <tbody id="heats-tbody"></tbody></table>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const CATS = ['Новички','Любители','Продвинутые'];
+    const GENDERS = [{code:'М',label:'Мужчины'},{code:'Ж',label:'Женщины'}];
+    const DAYS = ['8 августа','9 августа'];
+    let PW = sessionStorage.getItem('admin_pw') || '';
+
+    const RTYPE = { time:'Время', reps:'Повторения', weight:'Вес' };
+    const $ = id => document.getElementById(id);
+    const esc = s => String(s ?? '').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+    function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1600); }
+
+    async function apiGet(path){ const r=await fetch(path,{headers:{'X-Admin-Password':PW}}); return r.json(); }
+    async function apiSend(method,path,body){
+      const r=await fetch(path,{method,headers:{'X-Admin-Password':PW,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});
+      return r.json();
+    }
+
+    // ── Логин ──
+    async function tryLogin(pw){
+      const r = await fetch('/api/admin/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pw})});
+      const d = await r.json(); return d.ok;
+    }
+    $('login-btn').onclick = async () => {
+      const pw = $('pw').value;
+      if(await tryLogin(pw)){ PW=pw; sessionStorage.setItem('admin_pw',pw); enterApp(); }
+      else $('login-err').textContent = 'Неверный пароль';
+    };
+    $('pw').addEventListener('keydown',e=>{ if(e.key==='Enter') $('login-btn').click(); });
+    $('logout').onclick = () => { sessionStorage.removeItem('admin_pw'); location.reload(); };
+
+    function enterApp(){
+      $('login').style.display='none';
+      $('app').style.display='block';
+      initSelects();
+      loadWods();
+    }
+
+    // ── Табы ──
+    document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
+      document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===t));
+      document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
+      $('pane-'+t.dataset.pane).classList.add('active');
+      if(t.dataset.pane==='scores') loadScores();
+      if(t.dataset.pane==='heats') loadHeats();
+    });
+
+    function initSelects(){
+      // чекбоксы категорий/пола для комплекса
+      $('wod-cats').innerHTML = CATS.map(c=>`<label><input type="checkbox" value="${esc(c)}">${esc(c)}</label>`).join('');
+      $('wod-genders').innerHTML = GENDERS.map(g=>`<label><input type="checkbox" value="${g.code}">${esc(g.label)}</label>`).join('');
+      // селекты категории/пола
+      const catOpts = CATS.map(c=>`<option>${esc(c)}</option>`).join('');
+      const genOpts = GENDERS.map(g=>`<option value="${g.code}">${esc(g.label)}</option>`).join('');
+      $('sc-cat').innerHTML = catOpts; $('sc-gender').innerHTML = genOpts;
+      $('heat-cat').innerHTML = catOpts; $('heat-gender').innerHTML = genOpts;
+    }
+
+    // ── КОМПЛЕКСЫ ──
+    async function loadWods(){
+      const wods = await apiGet('/api/wods');
+      $('wods-tbody').innerHTML = wods.map(w=>`
+        <tr>
+          <td>${esc(w.order)}</td><td>${esc(w.name)}</td><td>${esc(w.day)}</td>
+          <td>${esc(RTYPE[w.result_type]||w.result_type||'')}</td><td>${esc(w.time_cap)}</td>
+          <td>${esc((w.categories||[]).join(', ')||'все')}</td>
+          <td>${esc((w.genders||[]).join(', ')||'все')}</td>
+          <td style="white-space:nowrap">
+            <button class="btn ghost sm" onclick='editWod(${JSON.stringify(w)})'>Ред.</button>
+            <button class="btn danger sm" onclick="delWod(${w.id})">Удал.</button>
+          </td>
+        </tr>`).join('') || '<tr><td colspan="8" class="muted">Пока пусто</td></tr>';
+      // datalist для заходов
+      $('wod-names').innerHTML = wods.map(w=>`<option value="${esc(w.name)}">`).join('');
+    }
+    window.editWod = (w)=>{
+      $('wod-form-title').textContent='Редактировать комплекс';
+      $('wod-id').value=w.id; $('wod-name').value=w.name; $('wod-order').value=w.order;
+      $('wod-day').value=w.day||'8 августа'; $('wod-scoring').value=w.scoring; $('wod-cap').value=w.time_cap;
+      $('wod-rtype').value=w.result_type||'reps'; $('wod-desc').value=w.description;
+      $('wod-cats').querySelectorAll('input').forEach(i=>i.checked=(w.categories||[]).includes(i.value));
+      $('wod-genders').querySelectorAll('input').forEach(i=>i.checked=(w.genders||[]).includes(i.value));
+      window.scrollTo(0,0);
+    };
+    window.delWod = async (id)=>{ if(!confirm('Удалить комплекс?'))return; await apiSend('DELETE','/api/admin/wods/'+id); toast('Удалено'); loadWods(); };
+    $('wod-reset').onclick = resetWodForm;
+    function resetWodForm(){
+      $('wod-form-title').textContent='Добавить комплекс';
+      $('wod-id').value=''; $('wod-name').value=''; $('wod-order').value='1'; $('wod-day').value='8 августа';
+      $('wod-scoring').value=''; $('wod-cap').value=''; $('wod-rtype').value='time'; $('wod-desc').value='';
+      $('wod-cats').querySelectorAll('input').forEach(i=>i.checked=false);
+      $('wod-genders').querySelectorAll('input').forEach(i=>i.checked=false);
+    }
+    $('wod-save').onclick = async ()=>{
+      const body = {
+        order:Number($('wod-order').value||0), name:$('wod-name').value.trim(),
+        scoring:$('wod-scoring').value.trim(), time_cap:$('wod-cap').value.trim(),
+        day:$('wod-day').value, result_type:$('wod-rtype').value, description:$('wod-desc').value,
+        categories:[...$('wod-cats').querySelectorAll('input:checked')].map(i=>i.value),
+        genders:[...$('wod-genders').querySelectorAll('input:checked')].map(i=>i.value),
+      };
+      if(!body.name){ alert('Укажи название'); return; }
+      const id = $('wod-id').value;
+      await apiSend(id?'PUT':'POST', '/api/admin/wods'+(id?'/'+id:''), body);
+      toast('Сохранено'); resetWodForm(); loadWods();
+    };
+
+    // ── БАЛЛЫ ──
+    $('sc-load').onclick = loadScores;
+    $('sc-add-athlete').onclick = async ()=>{
+      const name=$('sc-new-name').value.trim(); if(!name){alert('Введи ФИО');return;}
+      await apiSend('POST','/api/admin/athletes',{name,category:$('sc-cat').value,gender:$('sc-gender').value});
+      $('sc-new-name').value=''; toast('Атлет добавлен'); loadScores();
+    };
+    function secToTime(sec){ sec=Math.round(Number(sec)); const m=Math.floor(sec/60), s=sec%60; return m+':'+String(s).padStart(2,'0'); }
+    function fmtResult(v,t){ if(v==null||v==='') return ''; if(t==='time') return secToTime(v); return String(v).replace(/\.0+$/,''); }
+    function parseResult(s,t){
+      s=String(s).trim(); if(!s) return null;
+      if(t==='time'){
+        if(s.includes(':')){ const [m,sec]=s.split(':'); return (parseInt(m,10)||0)*60 + (parseInt(sec,10)||0); }
+        return Math.max(0, parseFloat(s)||0);
+      }
+      return Math.max(0, parseFloat(s.replace(',','.'))||0);
+    }
+    const RT_PH = { time:'мм:сс', weight:'кг', reps:'повт' };
+
+    async function loadScores(){
+      const cat=$('sc-cat').value, gen=$('sc-gender').value;
+      $('sc-context').textContent = `— ${cat} / ${gen}`;
+      const d = await apiGet(`/api/admin/scores?category=${encodeURIComponent(cat)}&gender=${encodeURIComponent(gen)}`);
+      const wods = d.wods||[];
+      $('sc-head').innerHTML = `<th>Атлет</th>${wods.map(w=>`<th>${esc(w.name)}<br><span class="muted">${esc(RTYPE[w.result_type]||'')}</span></th>`).join('')}<th>Σ баллы</th><th></th>`;
+      $('sc-tbody').innerHTML = (d.athletes||[]).map(a=>{
+        const cells = wods.map(w=>{
+          const raw = a.results[w.id];
+          const pts = a.points[w.id];
+          return `<td>
+            <input class="cell" type="text" data-aid="${a.id}" data-wid="${w.id}" data-rtype="${w.result_type}"
+                   placeholder="${RT_PH[w.result_type]||''}" value="${esc(fmtResult(raw,w.result_type))}">
+            <div class="cellpts">${pts!=null?pts+' балл.':'·'}</div></td>`;
+        }).join('');
+        return `<tr><td>${esc(a.name)}</td>${cells}<td class="total">${a.total||0}</td>
+          <td><button class="btn danger sm" onclick="delAthlete(${a.id})">×</button></td></tr>`;
+      }).join('') || `<tr><td colspan="${wods.length+3}" class="muted">Нет атлетов. Добавь выше.</td></tr>`;
+
+      $('sc-tbody').querySelectorAll('input.cell').forEach(inp=>{
+        const t = inp.dataset.rtype;
+        inp.oninput = ()=>{
+          if(t==='time'){
+            // маска мм:сс — двоеточие ставится само, последние 2 цифры = секунды
+            let dg = inp.value.replace(/\D/g,'').slice(0,4);
+            inp.value = dg.length>2 ? dg.slice(0,dg.length-2)+':'+dg.slice(-2) : dg;
+          } else {
+            inp.value = inp.value.replace(/[^\d.,]/g,'');
+          }
+        };
+        inp.onchange = async ()=>{
+          const val = parseResult(inp.value, t);
+          const r = await apiSend('POST','/api/admin/scores',
+            {athlete_id:Number(inp.dataset.aid), wod_id:Number(inp.dataset.wid), result:val});
+          if(r.error){ toast('Ошибка ввода'); return; }
+          toast('Сохранено'); loadScores();   // пересчёт мест и очков по группе
+        };
+      });
+    }
+    window.delAthlete = async (id)=>{ if(!confirm('Удалить атлета?'))return; await apiSend('DELETE','/api/admin/athletes/'+id); toast('Удалено'); loadScores(); };
+
+    // ── ЗАХОДЫ ──
+    function laneRow(lane='',name=''){
+      const div=document.createElement('div'); div.className='lane-row';
+      div.innerHTML = `<input class="lane" type="number" placeholder="№" value="${esc(lane)}"><input class="lname" list="heat-athlete-names" autocomplete="off" placeholder="начни вводить фамилию…" value="${esc(name)}"><button class="btn danger sm">×</button>`;
+      div.querySelector('button').onclick=()=>div.remove();
+      return div;
+    }
+    // Подсказка ФИО: подтягиваем атлетов выбранной категории+пола в datalist
+    async function refreshHeatAthletes(){
+      const cat=$('heat-cat').value, gen=$('heat-gender').value;
+      const list = await apiGet(`/api/admin/athletes?category=${encodeURIComponent(cat)}&gender=${encodeURIComponent(gen)}`);
+      const names = Array.isArray(list) ? list : [];
+      $('heat-athlete-names').innerHTML = names.map(a=>`<option value="${esc(a.name)}">`).join('');
+      $('heat-athlete-hint').textContent = `${names.length} атлетов в ${cat} / ${gen}`;
+    }
+    $('heat-add-lane').onclick = ()=>{ const n=$('heat-lanes').children.length+1; $('heat-lanes').appendChild(laneRow(n,'')); };
+    function resetHeatForm(){
+      $('heat-form-title').textContent='Добавить заход';
+      ['heat-id','heat-wod','heat-loc','heat-bs','heat-be','heat-start'].forEach(i=>$(i).value='');
+      $('heat-num').value='1'; $('heat-day').value='8 августа';
+      $('heat-lanes').innerHTML=''; $('heat-lanes').appendChild(laneRow(1,''));
+    }
+    $('heat-reset').onclick = resetHeatForm;
+    $('heat-cat').addEventListener('change', refreshHeatAthletes);
+    $('heat-gender').addEventListener('change', refreshHeatAthletes);
+    async function loadHeats(){
+      refreshHeatAthletes();
+      const heats = await apiGet('/api/heats');
+      $('heats-tbody').innerHTML = heats.map(h=>`
+        <tr>
+          <td>${esc(h.wod)}</td><td>${esc(h.heat)}</td><td>${esc(h.day)}</td>
+          <td>${esc(h.category)} ${esc(h.gender)}</td><td>${esc(h.start_time)}</td><td>${esc(h.location)}</td>
+          <td style="white-space:nowrap">
+            <button class="btn ghost sm" onclick='editHeat(${JSON.stringify(h)})'>Ред.</button>
+            <button class="btn danger sm" onclick="delHeat(${h.id})">Удал.</button>
+          </td>
+        </tr>`).join('') || '<tr><td colspan="7" class="muted">Пока пусто</td></tr>';
+      if(!$('heat-lanes').children.length) resetHeatForm();
+    }
+    window.editHeat = (h)=>{
+      $('heat-form-title').textContent='Редактировать заход';
+      $('heat-id').value=h.id; $('heat-wod').value=h.wod; $('heat-num').value=h.heat;
+      $('heat-day').value=h.day||'8 августа'; $('heat-cat').value=h.category||'Новички'; $('heat-gender').value=h.gender||'М';
+      refreshHeatAthletes();
+      $('heat-loc').value=h.location; $('heat-bs').value=h.briefing_start; $('heat-be').value=h.briefing_end; $('heat-start').value=h.start_time;
+      $('heat-lanes').innerHTML='';
+      (h.athletes||[]).forEach(a=>$('heat-lanes').appendChild(laneRow(a.lane,a.name)));
+      if(!h.athletes||!h.athletes.length) $('heat-lanes').appendChild(laneRow(1,''));
+      window.scrollTo(0,0);
+    };
+    window.delHeat = async (id)=>{ if(!confirm('Удалить заход?'))return; await apiSend('DELETE','/api/admin/heats/'+id); toast('Удалено'); loadHeats(); };
+    $('heat-save').onclick = async ()=>{
+      const cat=$('heat-cat').value;
+      const athletes=[...$('heat-lanes').children].map(d=>({
+        lane:Number(d.querySelector('.lane').value||0),
+        name:d.querySelector('.lname').value.trim(),
+        category:cat+' '+$('heat-gender').value
+      })).filter(a=>a.name);
+      const body={ wod:$('heat-wod').value.trim(), heat:Number($('heat-num').value||1), day:$('heat-day').value,
+        category:cat, gender:$('heat-gender').value, location:$('heat-loc').value.trim(),
+        briefing_start:$('heat-bs').value.trim(), briefing_end:$('heat-be').value.trim(), start_time:$('heat-start').value.trim(),
+        athletes };
+      if(!body.wod){ alert('Укажи комплекс'); return; }
+      const id=$('heat-id').value;
+      await apiSend(id?'PUT':'POST','/api/admin/heats'+(id?'/'+id:''),body);
+      toast('Сохранено'); resetHeatForm(); loadHeats();
+    };
+
+    // авто-вход, если пароль уже в сессии
+    if(PW){ tryLogin(PW).then(ok=>{ if(ok) enterApp(); else { sessionStorage.removeItem('admin_pw'); PW=''; } }); }
+  </script>
+</body>
+</html>

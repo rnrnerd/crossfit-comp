@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>Битва за Херсонес 2026 — Соревнование</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0e0f12; --surface: #16181d; --surface2: #1d2027;
+      --border: #2a2e37; --text: #f2f3f5; --hint: #8b909c;
+      --gold: #f2c440; --accent: #e0533d;
+      --silver: #c7ccd6; --bronze: #cd8246;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px)); }
+    /* Тёмная подложка: статуя + затемняющий градиент (фон всего ТМА) */
+    body::before { content: ''; position: fixed; inset: 0; z-index: -2; background: url('assets/hero.png') center top / cover no-repeat; opacity: .16; }
+    body::after  { content: ''; position: fixed; inset: 0; z-index: -1;
+      background: linear-gradient(180deg, rgba(14,15,18,.55) 0%, rgba(14,15,18,.9) 50%, var(--bg) 100%); }
+
+    /* Слим-шапка: логотип слева + название */
+    .appbar { display: flex; align-items: center; gap: 11px; padding: 8px 16px; border-bottom: 1px solid var(--border); }
+    .appbar .logo { height: 54px; width: auto; max-width: 64px; object-fit: contain; flex: none; }
+    .appbar .appname { font-family: 'Oswald', sans-serif; font-weight: 700; font-size: 15px; letter-spacing: .5px; text-transform: uppercase; line-height: 1.05; }
+    .appbar .appname span { display: block; font-size: 9px; font-weight: 500; letter-spacing: 2.5px; color: var(--hint); margin-top: 2px; }
+    h1,h2,h3,.oswald { font-family: 'Oswald', sans-serif; }
+    .caps { text-transform: uppercase; }
+
+    /* ── Нижнее меню (горизонтальное, фиксированное) ── */
+    .tabs {
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 20; background: var(--surface);
+      display: flex; border-top: 1px solid var(--border);
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+    .tab {
+      flex: 1; background: none; border: none; cursor: pointer; color: var(--hint);
+      padding: 13px 0; font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 500;
+    }
+    .tab.active { color: var(--gold); font-weight: 600; }
+
+    .screen { display: none; padding: 14px 16px; }
+    .screen.visible { display: block; }
+    .sec-title { font-family: 'Oswald', sans-serif; font-weight: 700; font-size: 11px; letter-spacing: 1px; color: var(--text); text-transform: uppercase; margin: 2px 2px 11px; }
+
+    /* ── Фильтры / поиск ── */
+    .filter-row { display: flex; gap: 8px; align-items: center; overflow-x: auto; padding-bottom: 4px; margin-bottom: 14px; scrollbar-width: none; }
+    .filter-row::-webkit-scrollbar { display: none; }
+    .search-btn { flex: none; width: 34px; height: 34px; border-radius: 50%; background: var(--surface); border: 1px solid var(--border); color: var(--text); font-size: 15px; cursor: pointer; }
+    .chip {
+      flex: none; font-family: 'Inter', sans-serif; font-size: 11px; letter-spacing: .3px; text-transform: none;
+      padding: 6px 11px; border: 1px solid var(--border); border-radius: 999px;
+      background: var(--surface); color: var(--hint); cursor: pointer;
+    }
+    .chip.active { background: var(--gold); color: #1a1a1a; border-color: var(--gold); font-weight: 600; }
+    /* чипы «пол» — тот же золотой акцент, но контуром (без заливки),
+       чтобы отличались от «категории», но не выбивались из палитры */
+    .chip.gender.active { background: transparent; color: var(--gold); border-color: var(--gold); font-weight: 600; }
+    .filter-label { font-family: 'Oswald', sans-serif; font-size: 10px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; color: var(--hint); margin: 0 2px 6px; }
+
+    /* Дропдаун дня */
+    .day-bar { margin-bottom: 14px; }
+    .day-select {
+      width: 100%; padding: 11px 14px; border-radius: 12px; background: var(--surface);
+      border: 1px solid var(--border); color: var(--text); font-family: 'Oswald', sans-serif;
+      font-size: 13px; font-weight: 600; letter-spacing: .5px; cursor: pointer;
+      -webkit-appearance: none; appearance: none;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%238b909c' stroke-width='3'><path d='M6 9l6 6 6-6'/></svg>");
+      background-repeat: no-repeat; background-position: right 14px center;
+    }
+    .search-input { width: 100%; margin-bottom: 14px; padding: 10px 14px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 13px; display: none; }
+    .search-input.show { display: block; }
+
+    /* ── Лидерборд ── */
+    .lb-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+      margin-bottom: 12px; overflow: hidden;
+    }
+    .lb-card.first { border-color: var(--gold); }
+    .lb-head { display: grid; grid-template-columns: 26px 38px 1fr auto 16px; align-items: center; gap: 10px; padding: 10px 13px; cursor: pointer; }
+    .lb-rank { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+      font-family: 'Oswald', sans-serif; font-weight: 700; font-size: 12px; background: var(--surface2); color: var(--hint); }
+    .lb-rank.g1 { background: var(--gold);   color: #1a1a1a; }
+    .lb-rank.g2 { background: var(--silver); color: #1a1a1a; }
+    .lb-rank.g3 { background: var(--bronze); color: #1a1a1a; }
+    .lb-ava { width: 38px; height: 38px; border-radius: 50%; background: var(--surface2); display: flex; align-items: center; justify-content: center;
+      font-family: 'Oswald', sans-serif; font-weight: 700; color: var(--hint); font-size: 12px; overflow: hidden; }
+    .lb-ava img { width: 100%; height: 100%; object-fit: cover; }
+    .lb-name { font-family: 'Oswald', sans-serif; font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: .3px; }
+    .lb-pts { font-family: 'Oswald', sans-serif; font-weight: 700; font-size: 15px; }
+    .lb-chev { color: var(--hint); transition: transform .2s; text-align: center; }
+    .lb-card.open .lb-chev { transform: rotate(180deg); }
+    .lb-detail { display: none; padding: 4px 14px 14px; border-top: 1px solid var(--border); }
+    .lb-card.open .lb-detail { display: block; }
+    .lb-wod { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px dashed var(--border); font-size: 12px; }
+    .lb-wod:last-child { border-bottom: none; }
+    .lb-wod .place { font-family: 'Oswald', sans-serif; font-weight: 700; color: var(--gold); }
+
+    /* ── Карточки (комплексы / расписание / заходы) ── */
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; margin-bottom: 12px; overflow: hidden; }
+    .acc-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 14px; cursor: pointer; }
+    .acc-title { font-family: 'Oswald', sans-serif; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; }
+    .acc-badge { display: inline-block; font-size: 9px; color: var(--gold); border: 1px solid var(--gold); border-radius: 6px; padding: 2px 7px; margin-top: 6px; }
+    .acc-chev { color: var(--hint); transition: transform .2s; flex: none; }
+    .card.open .acc-chev { transform: rotate(180deg); }
+    .acc-body { display: none; padding: 0 14px 14px; }
+    .card.open .acc-body { display: block; }
+    .acc-desc { font-size: 12px; white-space: pre-line; line-height: 1.55; color: var(--text); }
+
+    .sched-row { display: grid; grid-template-columns: 48px 1fr; gap: 12px; padding: 11px 4px; border-bottom: 1px solid var(--border); }
+    .sched-time { font-family: 'Oswald', sans-serif; font-weight: 700; color: var(--gold); font-size: 13px; }
+    .sched-title { font-size: 13px; font-weight: 500; }
+    .sched-loc { font-size: 11px; color: var(--hint); margin-top: 2px; }
+
+    /* Заходы — список */
+    .heat-item { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px; margin-bottom: 12px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 12px; transition: background .12s, border-color .12s, transform .12s; }
+    .heat-item:active { background: var(--surface2); border-color: var(--gold); transform: scale(0.99); }
+    .heat-item .hi-wod { font-family: 'Oswald', sans-serif; font-weight: 700; font-size: 13px; text-transform: uppercase; }
+    .heat-item .hi-meta { font-size: 10px; color: var(--hint); margin-top: 4px; }
+    .heat-item .hi-right { display: flex; align-items: center; gap: 9px; flex: none; }
+    .heat-item .hi-time { font-family: 'Oswald', sans-serif; font-weight: 700; font-size: 15px; color: var(--gold); }
+    .heat-item .hi-chev { color: var(--gold); font-size: 22px; line-height: 1; opacity: .8; }
+
+    /* Заходы — детали */
+    .back-btn { background: none; border: none; color: var(--text); font-size: 22px; cursor: pointer; padding: 4px 8px 12px 0; }
+    .phase { border-radius: 16px; padding: 16px; margin-bottom: 12px; }
+    .phase.warmup { background: linear-gradient(100deg, var(--accent), var(--gold)); }
+    .phase.warmup .ph-label, .phase.warmup .ph-time { color: #fff; }
+    .phase.brief { background: var(--surface); border: 1px solid var(--border); }
+    .ph-label { font-family: 'Oswald', sans-serif; font-size: 11px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: var(--hint); }
+    .ph-line { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+    .ph-time { font-family: 'Oswald', sans-serif; font-weight: 700; font-size: 19px; }
+    .ph-arrow { flex: 1; height: 2px; background: currentColor; position: relative; opacity: .8; }
+    .ph-arrow::before { content: ''; position: absolute; left: 0; top: 50%; width: 7px; height: 7px; border-radius: 50%; background: currentColor; transform: translateY(-50%); }
+    .ph-arrow::after { content: ''; position: absolute; right: -1px; top: 50%; border-left: 7px solid currentColor; border-top: 5px solid transparent; border-bottom: 5px solid transparent; transform: translateY(-50%); }
+    .heat-start { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 18px; text-align: center; margin-bottom: 18px; }
+    .heat-start .hs-label { font-family: 'Oswald', sans-serif; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--hint); }
+    .heat-start .hs-time { font-family: 'Oswald', sans-serif; font-weight: 700; font-size: 28px; margin-top: 6px; }
+    .start-row { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 12px; margin-bottom: 9px; display: grid; grid-template-columns: 24px 1fr; gap: 11px; align-items: center; }
+    .start-num { font-family: 'Oswald', sans-serif; font-weight: 700; font-size: 15px; color: var(--hint); text-align: center; }
+    .start-name { font-family: 'Oswald', sans-serif; font-weight: 700; font-size: 13px; text-transform: uppercase; }
+    .start-sub { display: flex; align-items: center; gap: 7px; margin-top: 5px; font-size: 11px; color: var(--hint); }
+    .start-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--gold); flex: none; }
+
+    .empty { text-align: center; color: var(--hint); padding: 48px 0; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <header class="appbar">
+    <img class="logo" src="assets/logo.png" alt="" onerror="this.style.display='none'" />
+    <div class="appname">Битва за Херсонес<span>Севастополь · 2026</span></div>
+  </header>
+
+  <nav class="tabs" id="tabs">
+    <button class="tab active" data-screen="leaderboard">Лидерборд</button>
+    <button class="tab" data-screen="wods">Комплексы</button>
+    <button class="tab" data-screen="schedule">Расписание</button>
+    <button class="tab" data-screen="heats">Заходы</button>
+  </nav>
+
+  <!-- ТАБЛИЦА ЛИДЕРОВ -->
+  <section class="screen visible" id="screen-leaderboard">
+    <div class="filter-label">Категория</div>
+    <div class="filter-row" id="lb-filters"></div>
+    <div class="filter-label">Пол</div>
+    <div class="filter-row" id="lb-gender-filters"></div>
+    <input class="search-input" id="lb-search" placeholder="Поиск по имени…" />
+    <div class="sec-title">Лидерборд</div>
+    <div id="lb-body"></div>
+  </section>
+
+  <!-- КОМПЛЕКСЫ -->
+  <section class="screen" id="screen-wods">
+    <div class="day-bar">
+      <select class="day-select" id="wod-day"><option>8 августа</option><option>9 августа</option></select>
+    </div>
+    <div class="filter-label">Категория</div>
+    <div class="filter-row" id="wod-cat-filters"></div>
+    <div class="filter-label">Пол</div>
+    <div class="filter-row" id="wod-gender-filters"></div>
+    <div class="sec-title">Комплексы</div>
+    <div id="wods-body"></div>
+  </section>
+
+  <!-- РАСПИСАНИЕ -->
+  <section class="screen" id="screen-schedule">
+    <div class="day-bar">
+      <select class="day-select" id="sched-day"><option>8 августа</option><option>9 августа</option></select>
+    </div>
+    <div class="filter-label">Категория</div>
+    <div class="filter-row" id="sched-cat-filters"></div>
+    <div class="filter-label">Пол</div>
+    <div class="filter-row" id="sched-gender-filters"></div>
+    <div class="sec-title">Расписание</div>
+    <div id="schedule-body"></div>
+  </section>
+
+  <!-- ЗАХОДЫ -->
+  <section class="screen" id="screen-heats">
+    <div id="heat-controls">
+      <div class="day-bar">
+        <select class="day-select" id="heat-day"><option>8 августа</option><option>9 августа</option></select>
+      </div>
+      <div class="filter-label">Категория</div>
+      <div class="filter-row" id="heat-cat-filters"></div>
+      <div class="filter-label">Пол</div>
+      <div class="filter-row" id="heat-gender-filters"></div>
+    </div>
+    <div id="heats-list"></div>
+    <div id="heat-detail" style="display:none;"></div>
+  </section>
+
+  <script>
+    const API_BASE = '';
+    const CATS    = ['Новички', 'Любители', 'Продвинутые'];
+    const GENDERS = [{ code: 'М', label: 'Мужчины' }, { code: 'Ж', label: 'Женщины' }];
+
+    const tg = window.Telegram?.WebApp;
+    try { tg?.ready(); tg?.expand(); } catch (e) {}
+
+    const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+    const api = p => fetch(API_BASE + p).then(r => r.json()).catch(() => ({ error: 'net' }));
+    const initials = n => (n || '').split(' ').slice(0, 2).map(w => w[0] || '').join('').toUpperCase();
+
+    let lbCat = 'Новички', lbGender = 'М', lbQuery = '';
+    let compCat = '', compGender = '';   // общий фильтр (комплексы / расписание / заходы), '' = все
+    let day = '8 августа';             // выбранный день (общий для комплексов/расписания/заходов)
+    let lastLb = [];
+
+    // синхронизируем все дроп-дауны дня и перерисовываем текущий экран
+    function bindDaySelect(id, reload) {
+      const sel = document.getElementById(id);
+      if (!sel) return;
+      sel.value = day;
+      sel.onchange = () => { day = sel.value; ['wod-day','sched-day','heat-day'].forEach(i => { const s = document.getElementById(i); if (s) s.value = day; }); reload(); };
+    }
+
+    // ── Навигация ──
+    const screens = ['leaderboard', 'wods', 'schedule', 'heats'];
+    function show(name) {
+      screens.forEach(s => document.getElementById('screen-' + s).classList.toggle('visible', s === name));
+      document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.screen === name));
+      window.scrollTo(0, 0);
+      if (name === 'leaderboard') loadLeaderboard();
+      if (name === 'wods') loadWods();
+      if (name === 'schedule') loadSchedule();
+      if (name === 'heats') loadHeats();
+    }
+    document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => show(b.dataset.screen)));
+
+    // ── Лидерборд ──
+    function buildLbFilters() {
+      const row = document.getElementById('lb-filters');
+      const catChips = CATS.map(c => `<button class="chip ${c === lbCat ? 'active' : ''}" data-cat="${esc(c)}">${esc(c)}</button>`).join('');
+      row.innerHTML = `<button class="search-btn" id="lb-search-btn">⌕</button>${catChips}`;
+      row.querySelectorAll('[data-cat]').forEach(ch => ch.onclick = () => { lbCat = ch.dataset.cat; buildLbFilters(); loadLeaderboard(); });
+
+      const grow = document.getElementById('lb-gender-filters');
+      grow.innerHTML = GENDERS.map(g => `<button class="chip gender ${g.code === lbGender ? 'active' : ''}" data-g="${g.code}">${esc(g.label)}</button>`).join('');
+      grow.querySelectorAll('[data-g]').forEach(ch => ch.onclick = () => { lbGender = ch.dataset.g; buildLbFilters(); loadLeaderboard(); });
+
+      document.getElementById('lb-search-btn').onclick = () => {
+        const inp = document.getElementById('lb-search');
+        inp.classList.toggle('show');
+        if (inp.classList.contains('show')) inp.focus(); else { lbQuery = ''; inp.value = ''; renderLb(); }
+      };
+    }
+    document.getElementById('lb-search').addEventListener('input', e => { lbQuery = e.target.value.trim().toLowerCase(); renderLb(); });
+
+    async function loadLeaderboard() {
+      const body = document.getElementById('lb-body');
+      body.innerHTML = '<div class="empty">Загрузка…</div>';
+      const rows = await api(`/api/leaderboard?category=${encodeURIComponent(lbCat)}&gender=${encodeURIComponent(lbGender)}`);
+      lastLb = Array.isArray(rows) ? rows : [];
+      renderLb();
+    }
+    function renderLb() {
+      const body = document.getElementById('lb-body');
+      let rows = lastLb;
+      if (lbQuery) rows = rows.filter(r => (r.name || '').toLowerCase().includes(lbQuery));
+      if (!rows.length) { body.innerHTML = '<div class="empty">Нет результатов</div>'; return; }
+      body.innerHTML = rows.map((r, i) => {
+        const place = i + 1;
+        const rankCls = place <= 3 ? ` g${place}` : '';
+        const ava = r.avatar ? `<img src="${esc(r.avatar)}" alt="">` : esc(initials(r.name));
+        const wods = Object.entries(r.wods || {}).map(([w, p]) =>
+          `<div class="lb-wod"><span>${esc(w)}</span><span class="place">${esc(p)} место</span></div>`).join('');
+        return `
+        <div class="lb-card ${place === 1 ? 'first' : ''}" data-i="${i}">
+          <div class="lb-head">
+            <div class="lb-rank${rankCls}">${place}</div>
+            <div class="lb-ava">${ava}</div>
+            <div class="lb-name">${esc(r.name)}</div>
+            <div class="lb-pts">${esc(r.points ?? 0)}</div>
+            <div class="lb-chev">⌄</div>
+          </div>
+          <div class="lb-detail">${wods || '<div class="empty" style="padding:14px 0">Нет разбивки</div>'}</div>
+        </div>`;
+      }).join('');
+      body.querySelectorAll('.lb-card').forEach(c => {
+        c.querySelector('.lb-head').onclick = () => c.classList.toggle('open');
+      });
+    }
+
+    // ── Комплексы ──
+    // Универсальный билдер фильтров «Категория»/«Пол» (общее состояние compCat/compGender)
+    function buildCompFilters(catId, genId, reload) {
+      const cr = document.getElementById(catId);
+      cr.innerHTML = `<button class="chip ${compCat === '' ? 'active' : ''}" data-cat="">Все категории</button>` +
+        CATS.map(c => `<button class="chip ${c === compCat ? 'active' : ''}" data-cat="${esc(c)}">${esc(c)}</button>`).join('');
+      cr.querySelectorAll('[data-cat]').forEach(ch => ch.onclick = () => { compCat = ch.dataset.cat; reload(); });
+      const gr = document.getElementById(genId);
+      gr.innerHTML = `<button class="chip gender ${compGender === '' ? 'active' : ''}" data-g="">Все</button>` +
+        GENDERS.map(g => `<button class="chip gender ${g.code === compGender ? 'active' : ''}" data-g="${g.code}">${esc(g.label)}</button>`).join('');
+      gr.querySelectorAll('[data-g]').forEach(ch => ch.onclick = () => { compGender = ch.dataset.g; reload(); });
+    }
+    async function loadWods() {
+      bindDaySelect('wod-day', loadWods);
+      buildCompFilters('wod-cat-filters', 'wod-gender-filters', loadWods);
+      const body = document.getElementById('wods-body');
+      body.innerHTML = '<div class="empty">Загрузка…</div>';
+      let wods = await api('/api/wods');
+      if (!Array.isArray(wods)) { body.innerHTML = '<div class="empty">Нет данных</div>'; return; }
+      wods = wods.filter(w =>
+        (!w.day || w.day === day) &&
+        (!compCat   || !w.categories?.length || w.categories.includes(compCat)) &&
+        (!compGender || !w.genders?.length   || w.genders.includes(compGender)));
+      if (!wods.length) { body.innerHTML = '<div class="empty">Нет комплексов под этот фильтр</div>'; return; }
+      body.innerHTML = wods.map(w => `
+        <div class="card">
+          <div class="acc-head">
+            <div>
+              <div class="acc-title">${esc(w.name)}</div>
+              <div class="acc-badge">${esc(w.scoring)}${w.time_cap ? ' · кап ' + esc(w.time_cap) : ''}</div>
+            </div>
+            <div class="acc-chev">⌄</div>
+          </div>
+          <div class="acc-body"><div class="acc-desc">${esc(w.description)}</div></div>
+        </div>`).join('');
+      body.querySelectorAll('.card').forEach(c => c.querySelector('.acc-head').onclick = () => c.classList.toggle('open'));
+    }
+
+    // ── Расписание ──
+    async function loadSchedule() {
+      bindDaySelect('sched-day', loadSchedule);
+      buildCompFilters('sched-cat-filters', 'sched-gender-filters', loadSchedule);
+      const body = document.getElementById('schedule-body');
+      body.innerHTML = '<div class="empty">Загрузка…</div>';
+      let sch = await api('/api/schedule');
+      if (!Array.isArray(sch)) { body.innerHTML = '<div class="empty">Нет данных</div>'; return; }
+      sch = sch.filter(s =>
+        (!s.day || s.day === day) &&
+        (!compCat    || !s.category || s.category === compCat) &&
+        (!compGender || !s.gender   || s.gender === compGender));
+      if (!sch.length) { body.innerHTML = '<div class="empty">Под этот фильтр расписания нет</div>'; return; }
+      body.innerHTML = sch.map(s => `
+        <div class="sched-row">
+          <div class="sched-time">${esc(s.time)}</div>
+          <div><div class="sched-title">${esc(s.title)}</div><div class="sched-loc">${esc(s.location)}</div></div>
+        </div>`).join('');
+    }
+
+    // ── Заходы ──
+    let heatsCache = [];
+    function setHeatFiltersVisible(v) { document.getElementById('heat-controls').style.display = v ? 'block' : 'none'; }
+    async function loadHeats() {
+      document.getElementById('heat-detail').style.display = 'none';
+      const list = document.getElementById('heats-list');
+      list.style.display = 'block';
+      setHeatFiltersVisible(true);
+      bindDaySelect('heat-day', loadHeats);
+      buildCompFilters('heat-cat-filters', 'heat-gender-filters', loadHeats);
+      list.innerHTML = '<div class="sec-title">Заходы</div><div class="empty">Загрузка…</div>';
+      const heats = await api('/api/heats');
+      heatsCache = (Array.isArray(heats) ? heats : []).filter(h =>
+        (!h.day || h.day === day) &&
+        (!compCat    || !h.category || h.category === compCat) &&
+        (!compGender || !h.gender   || h.gender === compGender));
+      if (!heatsCache.length) { list.innerHTML = '<div class="sec-title">Заходы</div><div class="empty">Под этот фильтр заходов нет</div>'; return; }
+      list.innerHTML = '<div class="sec-title">Заходы</div>' + heatsCache.map(h => `
+        <div class="heat-item" data-id="${esc(h.id)}">
+          <div class="hi-main">
+            <div class="hi-wod">${esc(h.wod)} · заход ${esc(h.heat)}</div>
+            <div class="hi-meta">${esc(h.category || '')} ${esc(h.gender || '')} · ${esc(h.location || '')}</div>
+          </div>
+          <div class="hi-right">
+            <div class="hi-time">${esc(h.start_time || '')}</div>
+            <div class="hi-chev">›</div>
+          </div>
+        </div>`).join('');
+      list.querySelectorAll('.heat-item').forEach(el => el.onclick = () => openHeat(el.dataset.id));
+    }
+    function openHeat(id) {
+      const h = heatsCache.find(x => String(x.id) === String(id));
+      if (!h) return;
+      document.getElementById('heats-list').style.display = 'none';
+      setHeatFiltersVisible(false);
+      const d = document.getElementById('heat-detail');
+      d.style.display = 'block';
+      const athletes = (h.athletes || []).map(a => `
+        <div class="start-row">
+          <div class="start-num">${esc(a.lane)}</div>
+          <div>
+            <div class="start-name">${esc(a.name)}</div>
+            <div class="start-sub"><span class="start-dot"></span>${esc(a.category || '')}</div>
+          </div>
+        </div>`).join('');
+      d.innerHTML = `
+        <button class="back-btn" id="heat-back">‹</button>
+        <div class="phase brief">
+          <div class="ph-label">Брифинг</div>
+          <div class="ph-line"><div class="ph-time">${esc(h.briefing_start)}</div><div class="ph-arrow"></div><div class="ph-time">${esc(h.briefing_end)}</div></div>
+        </div>
+        <div class="heat-start">
+          <div class="hs-label">Заход начинается в</div>
+          <div class="hs-time">${esc(h.start_time)}</div>
+        </div>
+        <div class="sec-title">Старт-лист</div>
+        ${athletes || '<div class="empty">Состав не задан</div>'}`;
+      document.getElementById('heat-back').onclick = loadHeats;
+      window.scrollTo(0, 0);
+    }
+
+    // ── Старт ──
+    buildLbFilters();
+    show('leaderboard');
+  </script>
+</body>
+</html>
