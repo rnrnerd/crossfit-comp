@@ -96,16 +96,16 @@
         </div>
         <div class="row" style="margin-top:12px">
           <div class="field"><label>Тип результата</label><select id="wod-rtype">
-            <option value="time">Время (меньше = лучше)</option>
-            <option value="reps">Повторения (больше = лучше)</option>
-            <option value="weight">Вес (больше = лучше)</option>
+            <option value="time">Время</option>
+            <option value="reps">Повторения</option>
+            <option value="weight">Вес</option>
           </select></div>
-          <div class="field grow"><label>Скоринг (текст)</label><input id="wod-scoring" placeholder="На время / AMRAP 10 мин" /></div>
-          <div class="field"><label>Тайм-кап</label><input id="wod-cap" style="width:110px" placeholder="12:00" /></div>
+          <div class="field grow"><label>Тип комплекса</label><input id="wod-scoring" placeholder="На время / AMRAP 10 мин" /></div>
+          <div class="field"><label>Лимит времени</label><input id="wod-cap" style="width:110px" placeholder="12:00" /></div>
         </div>
         <div class="row" style="margin-top:12px">
-          <div class="field"><label>Категории (пусто = все)</label><div class="checks" id="wod-cats"></div></div>
-          <div class="field"><label>Пол (пусто = все)</label><div class="checks" id="wod-genders"></div></div>
+          <div class="field"><label>Категории</label><div class="checks" id="wod-cats"></div></div>
+          <div class="field"><label>Пол</label><div class="checks" id="wod-genders"></div></div>
         </div>
         <div class="field grow" style="margin-top:12px"><label>Описание</label><textarea id="wod-desc" rows="4" placeholder="21-15-9:&#10;Трастеры…"></textarea></div>
         <div class="row" style="margin-top:14px">
@@ -123,12 +123,17 @@
     <!-- БАЛЛЫ -->
     <div class="pane" id="pane-scores">
       <div class="panel">
-        <h2>Начисление баллов</h2>
+        <h2>Выбор категории</h2>
         <div class="row">
           <div class="field"><label>Категория</label><select id="sc-cat"></select></div>
           <div class="field"><label>Пол</label><select id="sc-gender"></select></div>
           <button class="btn ghost" id="sc-load">Показать</button>
         </div>
+      </div>
+      <div class="panel">
+        <h2>Результаты <span class="muted" id="sc-context"></span></h2>
+        <p class="muted" style="margin-bottom:10px">Вводи сырой результат за каждый комплекс (время «мм:сс», вес в кг, повторения). Баллы и места считаются автоматически по результатам, под ячейкой — начисленные баллы.</p>
+        <table><thead><tr id="sc-head"></tr></thead><tbody id="sc-tbody"></tbody></table>
       </div>
       <div class="panel">
         <h2>Добавить атлета</h2>
@@ -137,11 +142,6 @@
           <button class="btn" id="sc-add-athlete">Добавить</button>
         </div>
         <p class="muted" style="margin-top:8px">Атлет добавится в выбранные сверху категорию и пол.</p>
-      </div>
-      <div class="panel">
-        <h2>Результаты <span class="muted" id="sc-context"></span></h2>
-        <p class="muted" style="margin-bottom:10px">Вводи сырой результат за каждый комплекс (время «мм:сс», вес в кг, повторения). Баллы и места считаются автоматически по результатам, под ячейкой — начисленные баллы.</p>
-        <table><thead><tr id="sc-head"></tr></thead><tbody id="sc-tbody"></tbody></table>
       </div>
     </div>
 
