@@ -263,6 +263,15 @@ async def get_heats():
 # ── Публичные эндпоинты ──────────────────────────────────────────────
 async def h_health(r):   return web.Response(text="ok")
 
+async def h_stats(r):
+    if r.method == "OPTIONS": return _cors(web.Response(status=204))
+    if USE_DB:
+        async with db_pool.acquire() as c:
+            n = await c.fetchval("SELECT COUNT(*) FROM athletes")
+    else:
+        n = len(sample_data.LEADERBOARD)
+    return _json({"athletes": int(n or 0)})
+
 async def h_index(r):
     f = BASE_DIR / "index.html"
     return web.FileResponse(f) if f.exists() else web.Response(text="index.html not found", status=404)
@@ -432,7 +441,7 @@ def build_web_app():
     app.router.add_get("/admin", h_admin)
     app.router.add_get("/healthz", h_health)
     for path, h in [("/api/leaderboard", h_leaderboard), ("/api/wods", h_wods),
-                    ("/api/schedule", h_schedule), ("/api/heats", h_heats)]:
+                    ("/api/schedule", h_schedule), ("/api/heats", h_heats), ("/api/stats", h_stats)]:
         app.router.add_get(path, h)
         app.router.add_options(path, h)
 

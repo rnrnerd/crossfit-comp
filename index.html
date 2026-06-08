@@ -23,8 +23,11 @@
     /* Слим-шапка: логотип слева + название */
     .appbar { display: flex; align-items: center; gap: 11px; padding: 8px 16px; border-bottom: 1px solid var(--border); }
     .appbar .logo { height: 54px; width: auto; max-width: 64px; object-fit: contain; flex: none; }
-    .appbar .appname { font-family: 'Oswald', sans-serif; font-weight: 700; font-size: 15px; letter-spacing: .5px; text-transform: uppercase; line-height: 1.05; }
+    .appbar .appname { flex: 1; font-family: 'Oswald', sans-serif; font-weight: 700; font-size: 15px; letter-spacing: .5px; text-transform: uppercase; line-height: 1.05; }
     .appbar .appname span { display: block; font-size: 9px; font-weight: 500; letter-spacing: 2.5px; color: var(--hint); margin-top: 2px; }
+    .appbar .appstat { flex: none; text-align: right; padding-left: 10px; border-left: 1px solid var(--border); }
+    .appbar .appstat .num { font-family: 'Oswald', sans-serif; font-weight: 700; font-size: 20px; color: var(--gold); line-height: 1; }
+    .appbar .appstat .lbl { display: block; font-size: 8px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; color: var(--hint); margin-top: 3px; }
     h1,h2,h3,.oswald { font-family: 'Oswald', sans-serif; }
     .caps { text-transform: uppercase; }
 
@@ -150,6 +153,7 @@
   <header class="appbar">
     <img class="logo" src="assets/logo.png" alt="" onerror="this.style.display='none'" />
     <div class="appname">Битва за Херсонес<span>Севастополь · 2026</span></div>
+    <div class="appstat"><span class="num" id="ath-count">—</span><span class="lbl">атлетов</span></div>
   </header>
 
   <nav class="tabs" id="tabs">
@@ -421,6 +425,9 @@
       document.getElementById('heat-back').onclick = loadHeats;
       window.scrollTo(0, 0);
     }
+
+    // счётчик атлетов в шапке
+    api('/api/stats').then(d=>{ if(d && typeof d.athletes==='number') document.getElementById('ath-count').textContent = d.athletes; });
 
     // ── Старт ──
     buildLbFilters();
