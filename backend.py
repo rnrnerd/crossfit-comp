@@ -292,17 +292,24 @@ async def h_stats(r):
         n = len(sample_data.LEADERBOARD)
     return _json({"athletes": int(n or 0)})
 
-def _nocache(resp):
+def _html_nocache(path):
+    # Читаем файл и отдаём как обычный ответ БЕЗ ETag/Last-Modified —
+    # чтобы Telegram-WebView не «ревалидировал» к старой закэшированной версии.
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return web.Response(text="not found", status=404)
+    resp = web.Response(text=text, content_type="text/html", charset="utf-8")
     resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
     return resp
 
 async def h_index(r):
-    f = BASE_DIR / "index.html"
-    return _nocache(web.FileResponse(f)) if f.exists() else web.Response(text="index.html not found", status=404)
+    return _html_nocache(BASE_DIR / "index.html")
 
 async def h_admin(r):
-    f = BASE_DIR / "admin.html"
-    return _nocache(web.FileResponse(f)) if f.exists() else web.Response(text="admin.html not found", status=404)
+    return _html_nocache(BASE_DIR / "admin.html")
 
 async def h_leaderboard(r):
     if r.method == "OPTIONS": return _cors(web.Response(status=204))
