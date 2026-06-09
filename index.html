@@ -138,6 +138,11 @@
     .heat-item .hi-right { display: flex; align-items: center; gap: 9px; flex: none; }
     .heat-item .hi-time { font-family: 'Oswald', sans-serif; font-weight: 700; font-size: 15px; color: var(--gold); }
     .heat-item .hi-chev { color: var(--gold); font-size: 22px; line-height: 1; opacity: .8; }
+    .heat-item .hi-found { margin-top: 7px; font-size: 13px; font-weight: 600; color: var(--gold);
+      background: rgba(242,196,64,0.12); border: 1px solid rgba(242,196,64,0.4); border-radius: 8px; padding: 5px 9px; display: inline-block; }
+    .heat-search { width: 100%; margin-bottom: 14px; padding: 11px 14px; border-radius: 12px;
+      border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 14px; }
+    .heat-search:focus { outline: none; border-color: var(--gold); }
 
     /* Заходы — детали */
     .back-btn { background: none; border: none; color: var(--text); font-size: 22px; cursor: pointer; padding: 4px 8px 12px 0; }
@@ -217,13 +222,16 @@
   <!-- ЗАХОДЫ -->
   <section class="screen" id="screen-heats">
     <div id="heat-controls">
-      <div class="day-bar">
-        <select class="day-select" id="heat-day"><option>8 августа</option><option>9 августа</option></select>
+      <input class="heat-search" id="heat-search" placeholder="Найти свой заход — введите фамилию" />
+      <div id="heat-filters-block">
+        <div class="day-bar">
+          <select class="day-select" id="heat-day"><option>8 августа</option><option>9 августа</option></select>
+        </div>
+        <div class="filter-label">Категория</div>
+        <div class="filter-row" id="heat-cat-filters"></div>
+        <div class="filter-label">Пол</div>
+        <div class="filter-row" id="heat-gender-filters"></div>
       </div>
-      <div class="filter-label">Категория</div>
-      <div class="filter-row" id="heat-cat-filters"></div>
-      <div class="filter-label">Пол</div>
-      <div class="filter-row" id="heat-gender-filters"></div>
     </div>
     <div id="heats-list"></div>
     <div id="heat-detail" style="display:none;"></div>
@@ -400,8 +408,44 @@
     }
 
     // ── Заходы ──
-    let heatsCache = [];
+    let heatsCache = [];   // отфильтрованные (день/кат/пол) — обычный список
+    let allHeats = [];     // все заходы — для поиска по фамилии
     function setHeatFiltersVisible(v) { document.getElementById('heat-controls').style.display = v ? 'block' : 'none'; }
+
+    function heatCard(h, found) {
+      const meta = found
+        ? `${esc(h.day || '')} · ${esc(h.category || '')} ${esc(h.gender || '')} · ${esc(h.location || '')}`
+        : `${esc(h.category || '')} ${esc(h.gender || '')} · ${esc(h.location || '')}`;
+      const foundLine = found ? `<div class="hi-found">${esc(found.name)} — дорожка ${esc(found.lane)}</div>` : '';
+      return `<div class="heat-item" data-id="${esc(h.id)}">
+        <div class="hi-main">
+          <div class="hi-wod">${esc(h.wod)} · заход ${esc(h.heat)}</div>
+          <div class="hi-meta">${meta}</div>${foundLine}
+        </div>
+        <div class="hi-right"><div class="hi-time">${esc(h.start_time || '')}</div><div class="hi-chev">›</div></div>
+      </div>`;
+    }
+
+    function renderHeats() {
+      const list = document.getElementById('heats-list');
+      const q = (document.getElementById('heat-search').value || '').trim().toLowerCase();
+      document.getElementById('heat-filters-block').style.display = q ? 'none' : 'block';
+      if (q) {
+        const matches = allHeats.map(h => {
+          const found = (h.athletes || []).find(a => (a.name || '').toLowerCase().includes(q));
+          return found ? { h, found } : null;
+        }).filter(Boolean);
+        list.innerHTML = matches.length
+          ? '<div class="sec-title">Ваши заходы</div>' + matches.map(m => heatCard(m.h, m.found)).join('')
+          : '<div class="sec-title">Поиск</div><div class="empty">Заходов с такой фамилией не найдено</div>';
+      } else {
+        list.innerHTML = heatsCache.length
+          ? '<div class="sec-title">Заходы</div>' + heatsCache.map(h => heatCard(h)).join('')
+          : '<div class="sec-title">Заходы</div><div class="empty">Под этот фильтр заходов нет</div>';
+      }
+      list.querySelectorAll('.heat-item').forEach(el => el.onclick = () => openHeat(el.dataset.id));
+    }
+
     async function loadHeats() {
       document.getElementById('heat-detail').style.display = 'none';
       const list = document.getElementById('heats-list');
@@ -409,28 +453,18 @@
       setHeatFiltersVisible(true);
       bindDaySelect('heat-day', loadHeats);
       buildCompFilters('heat-cat-filters', 'heat-gender-filters', loadHeats);
-      list.innerHTML = '<div class="sec-title">Заходы</div><div class="empty">Загрузка…</div>';
+      document.getElementById('heat-search').oninput = renderHeats;
+      list.innerHTML = '<div class="empty">Загрузка…</div>';
       const heats = await api('/api/heats');
-      heatsCache = (Array.isArray(heats) ? heats : []).filter(h =>
+      allHeats = Array.isArray(heats) ? heats : [];
+      heatsCache = allHeats.filter(h =>
         (!h.day || h.day === day) &&
         (!compCat    || !h.category || h.category === compCat) &&
         (!compGender || !h.gender   || h.gender === compGender));
-      if (!heatsCache.length) { list.innerHTML = '<div class="sec-title">Заходы</div><div class="empty">Под этот фильтр заходов нет</div>'; return; }
-      list.innerHTML = '<div class="sec-title">Заходы</div>' + heatsCache.map(h => `
-        <div class="heat-item" data-id="${esc(h.id)}">
-          <div class="hi-main">
-            <div class="hi-wod">${esc(h.wod)} · заход ${esc(h.heat)}</div>
-            <div class="hi-meta">${esc(h.category || '')} ${esc(h.gender || '')} · ${esc(h.location || '')}</div>
-          </div>
-          <div class="hi-right">
-            <div class="hi-time">${esc(h.start_time || '')}</div>
-            <div class="hi-chev">›</div>
-          </div>
-        </div>`).join('');
-      list.querySelectorAll('.heat-item').forEach(el => el.onclick = () => openHeat(el.dataset.id));
+      renderHeats();
     }
     function openHeat(id) {
-      const h = heatsCache.find(x => String(x.id) === String(id));
+      const h = allHeats.find(x => String(x.id) === String(id));
       if (!h) return;
       document.getElementById('heats-list').style.display = 'none';
       setHeatFiltersVisible(false);
