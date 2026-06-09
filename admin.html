@@ -81,6 +81,7 @@
     <div class="tabs">
       <button class="tab active" data-pane="wods">Комплексы</button>
       <button class="tab" data-pane="heats">Заходы</button>
+      <button class="tab" data-pane="schedule">Расписание</button>
       <button class="tab" data-pane="scores">Результаты</button>
     </div>
 
@@ -183,6 +184,32 @@
           <tbody id="heats-tbody"></tbody></table>
       </div>
     </div>
+
+    <!-- РАСПИСАНИЕ -->
+    <div class="pane" id="pane-schedule">
+      <div class="panel">
+        <h2 id="sched-form-title">Добавить событие</h2>
+        <input type="hidden" id="sched-id" />
+        <div class="row">
+          <div class="field"><label>День</label><select id="sched-day"><option>8 августа</option><option>9 августа</option></select></div>
+          <div class="field"><label>Время</label><input id="sched-time" style="width:90px" placeholder="09:00" /></div>
+          <div class="field grow"><label>Событие</label><input id="sched-title" placeholder="Комплекс 1 — Новички" /></div>
+          <div class="field"><label>Площадка</label><input id="sched-loc" placeholder="Площадка A" /></div>
+        </div>
+        <div class="row" style="margin-top:12px">
+          <div class="field"><label>Категория</label><select id="sched-cat"></select></div>
+          <div class="field"><label>Пол</label><select id="sched-gender"></select></div>
+          <button class="btn" id="sched-save">Сохранить</button>
+          <button class="btn ghost" id="sched-reset">Очистить</button>
+        </div>
+        <p class="muted" style="margin-top:8px">Категория/пол можно оставить «— все» (общее событие: регистрация, перерыв, награждение).</p>
+      </div>
+      <div class="panel">
+        <h2>Список событий</h2>
+        <table><thead><tr><th>День</th><th>Время</th><th>Событие</th><th>Площадка</th><th>Кат./Пол</th><th></th></tr></thead>
+          <tbody id="sched-tbody"></tbody></table>
+      </div>
+    </div>
   </div>
 
   <div class="toast" id="toast"></div>
@@ -231,6 +258,7 @@
       $('pane-'+t.dataset.pane).classList.add('active');
       if(t.dataset.pane==='scores') loadScores();
       if(t.dataset.pane==='heats') loadHeats();
+      if(t.dataset.pane==='schedule') loadSchedAdmin();
     });
 
     function initSelects(){
@@ -242,6 +270,9 @@
       const genOpts = GENDERS.map(g=>`<option value="${g.code}">${esc(g.label)}</option>`).join('');
       $('sc-cat').innerHTML = catOpts; $('sc-gender').innerHTML = genOpts;
       $('heat-cat').innerHTML = catOpts; $('heat-gender').innerHTML = genOpts;
+      const catAll = '<option value="">— все</option>' + catOpts;
+      const genAll = '<option value="">— все</option>' + genOpts;
+      $('sched-cat').innerHTML = catAll; $('sched-gender').innerHTML = genAll;
     }
 
     // ── КОМПЛЕКСЫ ──
@@ -421,6 +452,42 @@
       toast('Сохранено'); resetHeatForm(); loadHeats();
     };
 
+    // ── РАСПИСАНИЕ ──
+    function resetSchedForm(){
+      $('sched-form-title').textContent='Добавить событие';
+      $('sched-id').value=''; $('sched-time').value=''; $('sched-title').value=''; $('sched-loc').value='';
+      $('sched-day').value='8 августа'; $('sched-cat').value=''; $('sched-gender').value='';
+    }
+    $('sched-reset').onclick = resetSchedForm;
+    async function loadSchedAdmin(){
+      const list = await apiGet('/api/schedule');
+      $('sched-tbody').innerHTML = (Array.isArray(list)?list:[]).map(s=>`
+        <tr>
+          <td>${esc(s.day)}</td><td>${esc(s.time)}</td><td>${esc(s.title)}</td><td>${esc(s.location)}</td>
+          <td>${esc((s.category||'—')+(s.gender?' '+s.gender:''))}</td>
+          <td style="white-space:nowrap">
+            <button class="btn ghost sm" onclick='editSched(${JSON.stringify(s)})'>Ред.</button>
+            <button class="btn danger sm" onclick="delSched(${s.id})">Удал.</button>
+          </td>
+        </tr>`).join('') || '<tr><td colspan="6" class="muted">Пока пусто</td></tr>';
+    }
+    window.editSched = (s)=>{
+      $('sched-form-title').textContent='Редактировать событие';
+      $('sched-id').value=s.id; $('sched-day').value=s.day||'8 августа'; $('sched-time').value=s.time||'';
+      $('sched-title').value=s.title||''; $('sched-loc').value=s.location||'';
+      $('sched-cat').value=s.category||''; $('sched-gender').value=s.gender||'';
+      window.scrollTo(0,0);
+    };
+    window.delSched = async (id)=>{ if(!confirm('Удалить событие?'))return; await apiSend('DELETE','/api/admin/schedule/'+id); toast('Удалено'); loadSchedAdmin(); };
+    $('sched-save').onclick = async ()=>{
+      const body={ day:$('sched-day').value, time:$('sched-time').value.trim(), title:$('sched-title').value.trim(),
+        location:$('sched-loc').value.trim(), category:$('sched-cat').value, gender:$('sched-gender').value };
+      if(!body.title){ alert('Укажи событие'); return; }
+      const id=$('sched-id').value;
+      await apiSend(id?'PUT':'POST','/api/admin/schedule'+(id?'/'+id:''),body);
+      toast('Сохранено'); resetSchedForm(); loadSchedAdmin();
+    };
+
     // авто-маска чч:мм для полей времени в заходах
     function timeMask(el){
       if(!el) return;
@@ -429,7 +496,7 @@
         el.value = dg.length>2 ? dg.slice(0,dg.length-2)+':'+dg.slice(-2) : dg;
       });
     }
-    ['heat-bs','heat-be','heat-start'].forEach(id=>timeMask($(id)));
+    ['heat-bs','heat-be','heat-start','sched-time'].forEach(id=>timeMask($(id)));
 
     // авто-вход, если пароль уже в сессии
     if(PW){ tryLogin(PW).then(ok=>{ if(ok) enterApp(); else { sessionStorage.removeItem('admin_pw'); PW=''; } }); }

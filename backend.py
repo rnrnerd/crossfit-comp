@@ -106,6 +106,15 @@ CREATE TABLE IF NOT EXISTS heat_athletes (
     name     TEXT NOT NULL DEFAULT '',
     category TEXT NOT NULL DEFAULT ''
 );
+CREATE TABLE IF NOT EXISTS schedule (
+    id       SERIAL PRIMARY KEY,
+    day      TEXT NOT NULL DEFAULT '',
+    time     TEXT NOT NULL DEFAULT '',
+    title    TEXT NOT NULL DEFAULT '',
+    location TEXT NOT NULL DEFAULT '',
+    category TEXT NOT NULL DEFAULT '',
+    gender   TEXT NOT NULL DEFAULT ''
+);
 """
 
 
@@ -118,6 +127,14 @@ async def init_db():
         if n == 0:
             await _seed(c)
             logger.info("DB засеяна демо-данными")
+        # расписание сидим отдельно (таблица могла появиться позже)
+        if await c.fetchval("SELECT COUNT(*) FROM schedule") == 0:
+            for s in sample_data.SCHEDULE:
+                await c.execute(
+                    "INSERT INTO schedule (day,time,title,location,category,gender) VALUES ($1,$2,$3,$4,$5,$6)",
+                    s.get("day", ""), s.get("time", ""), s.get("title", ""), s.get("location", ""),
+                    s.get("category", ""), s.get("gender", ""))
+            logger.info("Расписание засеяно демо")
 
 
 async def _seed(c):
@@ -239,8 +256,11 @@ async def get_wods():
 
 
 async def get_schedule():
-    # Расписание пока вне админки — отдаём из sample_data.
-    return sample_data.SCHEDULE
+    if not USE_DB:
+        return sample_data.SCHEDULE
+    async with db_pool.acquire() as c:
+        rows = await c.fetch("SELECT id,day,time,title,location,category,gender FROM schedule ORDER BY day,time,id")
+        return [dict(r) for r in rows]
 
 
 async def get_heats():
@@ -438,6 +458,32 @@ async def _heat_upsert(r, hid):
             await c.execute("INSERT INTO heat_athletes (heat_id,lane,name,category) VALUES ($1,$2,$3,$4)",
                             hid, int(at.get("lane", 0) or 0), at.get("name", ""), at.get("category", ""))
     return _json({"ok": True, "id": hid})
+
+# Расписание ---------------------------------------------------------
+async def a_sched_create(r):
+    g = _admin_guard(r);  return g if g is not None else await _sched_upsert(r, None)
+async def a_sched_item(r):
+    g = _admin_guard(r)
+    if g is not None: return g
+    if r.method == "DELETE":
+        async with db_pool.acquire() as c:
+            await c.execute("DELETE FROM schedule WHERE id=$1", int(r.match_info["id"]))
+        return _json({"ok": True})
+    return await _sched_upsert(r, int(r.match_info["id"]))
+async def _sched_upsert(r, sid):
+    d = await r.json()
+    vals = (d.get("day", ""), d.get("time", ""), d.get("title", ""), d.get("location", ""),
+            d.get("category", ""), d.get("gender", ""))
+    async with db_pool.acquire() as c:
+        if sid is None:
+            sid = await c.fetchval(
+                """INSERT INTO schedule (day,time,title,location,category,gender)
+                   VALUES ($1,$2,$3,$4,$5,$6) RETURNING id""", *vals)
+        else:
+            await c.execute(
+                "UPDATE schedule SET day=$2,time=$3,title=$4,location=$5,category=$6,gender=$7 WHERE id=$1",
+                sid, *vals)
+    return _json({"ok": True, "id": sid})
 # ── Сборка приложения ────────────────────────────────────────────────
 def build_web_app():
     app = web.Application()
@@ -458,6 +504,8 @@ def build_web_app():
     app.router.add_route("*", "/api/admin/scores", a_scores)            # GET / POST
     app.router.add_route("*", "/api/admin/heats", a_heat_create)        # POST
     app.router.add_route("*", "/api/admin/heats/{id}", a_heat_item)     # PUT / DELETE
+    app.router.add_route("*", "/api/admin/schedule", a_sched_create)    # POST
+    app.router.add_route("*", "/api/admin/schedule/{id}", a_sched_item) # PUT / DELETE
 
     assets = BASE_DIR / "assets"
     if assets.exists():
