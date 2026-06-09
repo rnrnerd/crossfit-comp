@@ -105,7 +105,7 @@
     /* профиль атлета (раскрытая строка) */
     .prof-sum { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: 12px; color: var(--hint); padding: 4px 0 9px; border-bottom: 1px solid var(--border); margin-bottom: 7px; }
     .prof-sum b { color: var(--text); font-family: 'Oswald', sans-serif; font-weight: 700; }
-    .prof-sum .prof-total { font-family: 'Oswald', sans-serif; font-weight: 700; color: var(--gold); flex: none; }
+    .prof-sum .prof-total { font-family: 'Oswald', sans-serif; font-weight: 700; color: var(--gold); flex: none; border: 1px solid var(--gold); border-radius: 8px; padding: 4px 10px; font-size: 13px; }
     .pw { padding: 8px 0; border-bottom: 1px dashed var(--border); }
     .pw:last-child { border-bottom: none; }
     .pw-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
@@ -313,7 +313,7 @@
         const rankCls = place <= 3 ? ` g${place}` : '';
         const ava = r.avatar ? `<img src="${esc(r.avatar)}" alt="">` : esc(initials(r.name));
         const wodsArr = Array.isArray(r.wods) ? r.wods : [];
-        const detail = `<div class="prof-sum"><span>Место в категории: <b>${place}</b></span><span class="prof-total">Σ ${esc(r.points ?? 0)} балл.</span></div>` +
+        const detail = `<div class="prof-sum"><span>Место в категории: <b>${place}</b></span><span class="prof-total">${esc(r.points ?? 0)} балл.</span></div>` +
           (wodsArr.map(w => `
             <div class="pw">
               <div class="pw-top"><span class="pw-name">${esc(w.name)}</span><span class="pw-pts">${esc(w.points ?? 0)} балл.</span></div>
