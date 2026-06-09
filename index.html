@@ -442,7 +442,7 @@
     // Авто-обновление лидерборда (тихо, без «Загрузка…», только когда экран открыт)
     setInterval(async () => {
       if (!document.getElementById('screen-leaderboard').classList.contains('visible')) return;
-      const rows = await api(`/api/leaderboard?category=${encodeURIComponent(lbCat)}&gender=${encodeURIComponent(lbGender)}`);
+      const rows = await api(`/api/leaderboard?category=${encodeURIComponent(lbCat)}&gender=${encodeURIComponent(lbGender)}&_=${Date.now()}`);
       if (Array.isArray(rows)) { lastLb = rows; renderLb(); }
     }, LB_REFRESH_MS);
 

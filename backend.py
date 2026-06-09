@@ -172,7 +172,9 @@ def _cors(resp):
 
 
 def _json(data):
-    return _cors(web.json_response(data))
+    resp = _cors(web.json_response(data))
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    return resp
 
 
 def _splitlist(s):
