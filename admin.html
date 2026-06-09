@@ -133,7 +133,7 @@
       </div>
       <div class="panel">
         <h2>Результаты <span class="muted" id="sc-context"></span></h2>
-        <p class="muted" style="margin-bottom:10px">Вводи сырой результат за каждый комплекс (время «мм:сс», вес в кг, повторения). Баллы и места считаются автоматически по результатам, под ячейкой — начисленные баллы.</p>
+        <p class="muted" style="margin-bottom:10px">Вводи сырой результат за каждый комплекс (время «мм:сс», вес в кг, повторения). Баллы и места считаются автоматически по результатам, под ячейкой — начисленные баллы. Навигация: <b>↑ ↓</b> и <b>Enter</b> — по столбцу, <b>Tab</b> — по строке.</p>
         <table><thead><tr id="sc-head"></tr></thead><tbody id="sc-tbody"></tbody></table>
       </div>
       <div class="panel">
@@ -219,6 +219,7 @@
     const GENDERS = [{code:'М',label:'Мужчины'},{code:'Ж',label:'Женщины'}];
     const DAYS = ['8 августа','9 августа'];
     let PW = sessionStorage.getItem('admin_pw') || '';
+    let scCols = 0;   // число столбцов-комплексов (для навигации стрелками)
 
     const RTYPE = { time:'Время', reps:'Повторения', weight:'Вес' };
     const $ = id => document.getElementById(id);
@@ -349,6 +350,7 @@
       const d = await apiGet(`/api/admin/scores?category=${encodeURIComponent(cat)}&gender=${encodeURIComponent(gen)}`);
       const wods = d.wods||[];
       $('sc-head').innerHTML = `<th>Атлет</th>${wods.map(w=>`<th>${esc(w.name)}<br><span class="muted">${esc(RTYPE[w.result_type]||'')}</span></th>`).join('')}<th>Σ баллы</th><th></th>`;
+      scCols = wods.length;
       $('sc-tbody').innerHTML = (d.athletes||[]).map(a=>{
         const cells = wods.map(w=>{
           const raw = a.results[w.id];
@@ -356,9 +358,9 @@
           return `<td>
             <input class="cell" type="text" data-aid="${a.id}" data-wid="${w.id}" data-rtype="${w.result_type}"
                    placeholder="${RT_PH[w.result_type]||''}" value="${esc(fmtResult(raw,w.result_type))}">
-            <div class="cellpts">${pts!=null?pts+' балл.':'·'}</div></td>`;
+            <div class="cellpts" data-aid="${a.id}" data-wid="${w.id}">${pts!=null?pts+' балл.':'·'}</div></td>`;
         }).join('');
-        return `<tr><td>${esc(a.name)}</td>${cells}<td class="total">${a.total||0}</td>
+        return `<tr><td>${esc(a.name)}</td>${cells}<td class="total" id="tot-${a.id}">${a.total||0}</td>
           <td><button class="btn danger sm" onclick="delAthlete(${a.id})">×</button></td></tr>`;
       }).join('') || `<tr><td colspan="${wods.length+3}" class="muted">Нет атлетов. Добавь выше.</td></tr>`;
 
@@ -366,7 +368,6 @@
         const t = inp.dataset.rtype;
         inp.oninput = ()=>{
           if(t==='time'){
-            // маска мм:сс — двоеточие ставится само, последние 2 цифры = секунды
             let dg = inp.value.replace(/\D/g,'').slice(0,4);
             inp.value = dg.length>2 ? dg.slice(0,dg.length-2)+':'+dg.slice(-2) : dg;
           } else {
@@ -378,8 +379,33 @@
           const r = await apiSend('POST','/api/admin/scores',
             {athlete_id:Number(inp.dataset.aid), wod_id:Number(inp.dataset.wid), result:val});
           if(r.error){ toast('Ошибка ввода'); return; }
-          toast('Сохранено'); loadScores();   // пересчёт мест и очков по группе
+          refreshScoreNumbers();   // обновляем баллы/места на месте, без сброса фокуса
         };
+        // навигация: ↑↓ / Enter — вниз, Shift+Enter / ↑ — вверх
+        inp.onkeydown = (e)=>{
+          let dir = 0;
+          if(e.key==='ArrowDown' || (e.key==='Enter' && !e.shiftKey)) dir = 1;
+          else if(e.key==='ArrowUp' || (e.key==='Enter' && e.shiftKey)) dir = -1;
+          else return;
+          e.preventDefault();
+          const inputs = [...$('sc-tbody').querySelectorAll('input.cell')];
+          const tgt = inputs[inputs.indexOf(inp) + dir*scCols];
+          if(tgt){ tgt.focus(); tgt.select(); }
+        };
+      });
+    }
+    // тихий пересчёт баллов/мест/сумм без перестройки таблицы (фокус сохраняется)
+    async function refreshScoreNumbers(){
+      const cat=$('sc-cat').value, gen=$('sc-gender').value;
+      const d = await apiGet(`/api/admin/scores?category=${encodeURIComponent(cat)}&gender=${encodeURIComponent(gen)}`);
+      (d.athletes||[]).forEach(a=>{
+        (d.wods||[]).forEach(w=>{
+          const pts = a.points[w.id];
+          const el = $('sc-tbody').querySelector(`.cellpts[data-aid="${a.id}"][data-wid="${w.id}"]`);
+          if(el) el.textContent = pts!=null?pts+' балл.':'·';
+        });
+        const tot = document.getElementById('tot-'+a.id);
+        if(tot) tot.textContent = a.total||0;
       });
     }
     window.delAthlete = async (id)=>{ if(!confirm('Удалить атлета?'))return; await apiSend('DELETE','/api/admin/athletes/'+id); toast('Удалено'); loadScores(); };
