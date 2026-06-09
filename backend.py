@@ -185,18 +185,18 @@ def _place_points(place):
     return max(0, 100 - 5 * (place - 1))
 
 
-def rank_points(pairs, direction):
+def rank_places(pairs, direction):
     """pairs: [(athlete_id, result)]. direction: 'asc' (меньше=лучше) / 'desc'.
-    Возвращает {athlete_id: очки}. Равные результаты делят лучшее место (1224)."""
+    Возвращает {athlete_id: место}. Равные результаты делят лучшее место (1224)."""
     s = sorted(pairs, key=lambda x: x[1], reverse=(direction == "desc"))
     out, idx, n = {}, 0, len(s)
     while idx < n:
         j = idx
         while j < n and s[j][1] == s[idx][1]:
             j += 1
-        pts = _place_points(idx + 1)          # место группы = idx+1
+        place = idx + 1                        # место группы = idx+1
         for k in range(idx, j):
-            out[s[k][0]] = pts
+            out[s[k][0]] = place
         idx = j
     return out
 
@@ -214,12 +214,14 @@ async def _group_table(c, category, gender):
             if srow["result"] is not None:
                 results[srow["athlete_id"]][srow["wod_id"]] = srow["result"]
     points = {aid: {} for aid in aids}
+    places = {aid: {} for aid in aids}
     for w in wods:
         direction = "asc" if w["result_type"] == "time" else "desc"
         pairs = [(aid, results[aid][w["id"]]) for aid in aids if w["id"] in results[aid]]
-        for aid, p in rank_points(pairs, direction).items():
-            points[aid][w["id"]] = p
-    return wods, athletes, results, points
+        for aid, place in rank_places(pairs, direction).items():
+            places[aid][w["id"]] = place
+            points[aid][w["id"]] = _place_points(place)
+    return wods, athletes, results, points, places
 
 
 def require_admin(request):
@@ -233,15 +235,20 @@ async def get_leaderboard(category, gender):
                 if (not category or r["category"] == category) and (not gender or r["gender"] == gender)]
         return sorted(rows, key=lambda r: r.get("points", 0), reverse=True)
     async with db_pool.acquire() as c:
-        wods, athletes, results, points = await _group_table(c, category, gender)
-        wname = {w["id"]: w["name"] for w in wods}
+        wods, athletes, results, points, places = await _group_table(c, category, gender)
         out = []
         for a in athletes:
-            pmap = points[a["id"]]
-            total = sum(pmap.values())
+            aid = a["id"]
+            total = sum(points[aid].values())
+            wlist = [{
+                "name": w["name"],
+                "result_type": w["result_type"],
+                "result": results[aid].get(w["id"]),    # сырой результат или None
+                "place": places[aid].get(w["id"]),       # место или None
+                "points": points[aid].get(w["id"], 0),
+            } for w in wods]
             out.append({"name": a["name"], "category": category, "gender": gender,
-                        "points": total, "avatar": "",
-                        "wods": {wname[wid]: pts for wid, pts in pmap.items()}})
+                        "points": total, "avatar": "", "wods": wlist})
         out.sort(key=lambda r: r["points"], reverse=True)
         return out
 
@@ -407,7 +414,7 @@ async def a_scores(r):
     if r.method == "GET":
         cat = r.query.get("category", "").strip(); gen = r.query.get("gender", "").strip()
         async with db_pool.acquire() as c:
-            wods, athletes, results, points = await _group_table(c, cat, gen)
+            wods, athletes, results, points, places = await _group_table(c, cat, gen)
         res = []
         for a in athletes:
             aid = a["id"]
