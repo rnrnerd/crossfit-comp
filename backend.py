@@ -272,13 +272,17 @@ async def h_stats(r):
         n = len(sample_data.LEADERBOARD)
     return _json({"athletes": int(n or 0)})
 
+def _nocache(resp):
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    return resp
+
 async def h_index(r):
     f = BASE_DIR / "index.html"
-    return web.FileResponse(f) if f.exists() else web.Response(text="index.html not found", status=404)
+    return _nocache(web.FileResponse(f)) if f.exists() else web.Response(text="index.html not found", status=404)
 
 async def h_admin(r):
     f = BASE_DIR / "admin.html"
-    return web.FileResponse(f) if f.exists() else web.Response(text="admin.html not found", status=404)
+    return _nocache(web.FileResponse(f)) if f.exists() else web.Response(text="admin.html not found", status=404)
 
 async def h_leaderboard(r):
     if r.method == "OPTIONS": return _cors(web.Response(status=204))
