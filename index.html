@@ -231,6 +231,8 @@
     const initials = n => (n || '').split(' ').slice(0, 2).map(w => w[0] || '').join('').toUpperCase();
 
     let lbCat = 'Новички', lbGender = 'М', lbQuery = '';
+    let openLb = new Set();              // раскрытые строки лидерборда (по имени)
+    const LB_REFRESH_MS = 5000;          // авто-обновление лидерборда
     let compCat = '', compGender = '';   // общий фильтр (комплексы / расписание / заходы), '' = все
     let day = '8 августа';             // выбранный день (общий для комплексов/расписания/заходов)
     let lastLb = [];
@@ -292,9 +294,10 @@
         const rankCls = place <= 3 ? ` g${place}` : '';
         const ava = r.avatar ? `<img src="${esc(r.avatar)}" alt="">` : esc(initials(r.name));
         const wods = Object.entries(r.wods || {}).map(([w, p]) =>
-          `<div class="lb-wod"><span>${esc(w)}</span><span class="place">${esc(p)} место</span></div>`).join('');
+          `<div class="lb-wod"><span>${esc(w)}</span><span class="place">${esc(p)} балл.</span></div>`).join('');
+        const isOpen = openLb.has(r.name) ? ' open' : '';
         return `
-        <div class="lb-card ${place === 1 ? 'first' : ''}" data-i="${i}">
+        <div class="lb-card ${place === 1 ? 'first' : ''}${isOpen}" data-name="${esc(r.name)}">
           <div class="lb-head">
             <div class="lb-rank${rankCls}">${place}</div>
             <div class="lb-ava">${ava}</div>
@@ -306,7 +309,11 @@
         </div>`;
       }).join('');
       body.querySelectorAll('.lb-card').forEach(c => {
-        c.querySelector('.lb-head').onclick = () => c.classList.toggle('open');
+        c.querySelector('.lb-head').onclick = () => {
+          c.classList.toggle('open');
+          const nm = c.dataset.name;
+          if (c.classList.contains('open')) openLb.add(nm); else openLb.delete(nm);
+        };
       });
     }
 
@@ -431,6 +438,13 @@
 
     // счётчик атлетов в шапке
     api('/api/stats').then(d=>{ if(d && typeof d.athletes==='number') document.getElementById('ath-count').textContent = d.athletes; });
+
+    // Авто-обновление лидерборда (тихо, без «Загрузка…», только когда экран открыт)
+    setInterval(async () => {
+      if (!document.getElementById('screen-leaderboard').classList.contains('visible')) return;
+      const rows = await api(`/api/leaderboard?category=${encodeURIComponent(lbCat)}&gender=${encodeURIComponent(lbGender)}`);
+      if (Array.isArray(rows)) { lastLb = rows; renderLb(); }
+    }, LB_REFRESH_MS);
 
     // ── Старт ──
     buildLbFilters();
