@@ -140,9 +140,14 @@
     .heat-item .hi-chev { color: var(--gold); font-size: 22px; line-height: 1; opacity: .8; }
     .heat-item .hi-found { margin-top: 7px; font-size: 13px; font-weight: 600; color: var(--gold);
       background: rgba(242,196,64,0.12); border: 1px solid rgba(242,196,64,0.4); border-radius: 8px; padding: 5px 9px; display: inline-block; }
-    .heat-search { width: 100%; margin-bottom: 14px; padding: 11px 14px; border-radius: 12px;
+    .heat-search-wrap { position: relative; margin-bottom: 14px; }
+    .heat-search { width: 100%; padding: 11px 42px 11px 14px; border-radius: 12px;
       border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 14px; }
     .heat-search:focus { outline: none; border-color: var(--gold); }
+    .heat-search-clear { position: absolute; right: 7px; top: 50%; transform: translateY(-50%);
+      width: 28px; height: 28px; border: none; border-radius: 50%; background: var(--surface2);
+      color: var(--hint); font-size: 18px; line-height: 1; cursor: pointer; display: none; }
+    .heat-search-clear.show { display: block; }
 
     /* Заходы — детали */
     .back-btn { background: none; border: none; color: var(--text); font-size: 22px; cursor: pointer; padding: 4px 8px 12px 0; }
@@ -222,7 +227,10 @@
   <!-- ЗАХОДЫ -->
   <section class="screen" id="screen-heats">
     <div id="heat-controls">
-      <input class="heat-search" id="heat-search" placeholder="Найти свой заход — введите фамилию" />
+      <div class="heat-search-wrap">
+        <input class="heat-search" id="heat-search" placeholder="Найти свой заход — введите фамилию" />
+        <button class="heat-search-clear" id="heat-search-clear" type="button" aria-label="Очистить">×</button>
+      </div>
       <div id="heat-filters-block">
         <div class="day-bar">
           <select class="day-select" id="heat-day"><option>8 августа</option><option>9 августа</option></select>
@@ -453,7 +461,11 @@
       setHeatFiltersVisible(true);
       bindDaySelect('heat-day', loadHeats);
       buildCompFilters('heat-cat-filters', 'heat-gender-filters', loadHeats);
-      document.getElementById('heat-search').oninput = renderHeats;
+      const hs = document.getElementById('heat-search');
+      const hc = document.getElementById('heat-search-clear');
+      hs.oninput = () => { hc.classList.toggle('show', !!hs.value); renderHeats(); };
+      hc.onclick = () => { hs.value = ''; hc.classList.remove('show'); renderHeats(); hs.focus(); };
+      hc.classList.toggle('show', !!hs.value);
       list.innerHTML = '<div class="empty">Загрузка…</div>';
       const heats = await api('/api/heats');
       allHeats = Array.isArray(heats) ? heats : [];
