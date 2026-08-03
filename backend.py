@@ -58,6 +58,9 @@ CREATE TABLE IF NOT EXISTS athletes (
     category TEXT NOT NULL DEFAULT '',
     gender   TEXT NOT NULL DEFAULT ''
 );
+-- фото атлета (JPEG, сжатое на клиенте) + версия для сброса кэша
+ALTER TABLE athletes ADD COLUMN IF NOT EXISTS photo BYTEA;
+ALTER TABLE athletes ADD COLUMN IF NOT EXISTS photo_v INTEGER NOT NULL DEFAULT 0;
 CREATE TABLE IF NOT EXISTS wods (
     id          SERIAL PRIMARY KEY,
     ord         INTEGER NOT NULL DEFAULT 0,
@@ -181,6 +184,25 @@ def _splitlist(s):
     return [x.strip() for x in (s or "").split(",") if x.strip()]
 
 
+def norm_name(s):
+    """Нормализация ФИО для сопоставления: регистр, ё→е, лишние символы."""
+    s = (s or "").lower().replace("ё", "е")
+    s = "".join(ch if (ch.isalpha() or ch.isspace()) else " " for ch in s)
+    return " ".join(s.split())
+
+
+def name_keys(s):
+    """Ключи для матчинга: полное имя и «фамилия+имя» в отсортированном виде
+    (порядок слов в базе бывает разный: «Иванов Иван» и «Иван Иванов»)."""
+    n = norm_name(s)
+    parts = n.split()
+    keys = {n}
+    if len(parts) >= 2:
+        keys.add(" ".join(sorted(parts[:2])))
+        keys.add(" ".join(sorted(parts)))
+    return keys
+
+
 def _place_points(place):
     return max(0, 100 - 5 * (place - 1))
 
@@ -204,8 +226,9 @@ def rank_places(pairs, direction):
 async def _group_table(c, category, gender):
     """Считает по группе (категория+пол): сырые результаты + очки по каждому комплексу."""
     wods = await c.fetch("SELECT id,name,result_type,ord FROM wods ORDER BY ord,id")
-    athletes = await c.fetch("SELECT id,name FROM athletes WHERE category=$1 AND gender=$2 ORDER BY name",
-                             category, gender)
+    athletes = await c.fetch(
+        """SELECT id, name, photo_v, (photo IS NOT NULL) AS has_photo
+           FROM athletes WHERE category=$1 AND gender=$2 ORDER BY name""", category, gender)
     aids = [a["id"] for a in athletes]
     results = {aid: {} for aid in aids}
     if aids:
@@ -247,8 +270,9 @@ async def get_leaderboard(category, gender):
                 "place": places[aid].get(w["id"]),       # место или None
                 "points": points[aid].get(w["id"], 0),
             } for w in wods]
+            avatar = f"/api/photo/{aid}?v={a['photo_v']}" if a["has_photo"] else ""
             out.append({"name": a["name"], "category": category, "gender": gender,
-                        "points": total, "avatar": "", "wods": wlist})
+                        "points": total, "avatar": avatar, "wods": wlist})
         out.sort(key=lambda r: r["points"], reverse=True)
         return out
 
@@ -277,20 +301,55 @@ async def get_heats():
         return sample_data.HEATS
     async with db_pool.acquire() as c:
         hrows = await c.fetch("SELECT * FROM heats ORDER BY day, start_time, id")
+        # карта «имя → фото» (в заходах атлеты хранятся по ФИО, а не по id)
+        prows = await c.fetch(
+            "SELECT id,name,photo_v FROM athletes WHERE photo IS NOT NULL")
+        photo_by_key = {}
+        for p in prows:
+            for k in name_keys(p["name"]):
+                photo_by_key.setdefault(k, f"/api/photo/{p['id']}?v={p['photo_v']}")
         out = []
         for h in hrows:
             ath = await c.fetch(
                 "SELECT lane,name,category FROM heat_athletes WHERE heat_id=$1 ORDER BY lane", h["id"])
+            alist = []
+            for a in ath:
+                avatar = ""
+                for k in name_keys(a["name"]):
+                    if k in photo_by_key:
+                        avatar = photo_by_key[k]
+                        break
+                alist.append({"lane": a["lane"], "name": a["name"],
+                              "category": a["category"], "avatar": avatar})
             out.append({"id": h["id"], "wod": h["wod"], "heat": h["heat"], "day": h["day"],
                         "category": h["category"], "gender": h["gender"],
                         "briefing_start": h["briefing_start"], "briefing_end": h["briefing_end"],
                         "start_time": h["start_time"], "location": h["location"],
-                        "athletes": [{"lane": a["lane"], "name": a["name"], "category": a["category"]} for a in ath]})
+                        "athletes": alist})
         return out
 
 
 # ── Публичные эндпоинты ──────────────────────────────────────────────
 async def h_health(r):   return web.Response(text="ok")
+
+
+async def h_photo(r):
+    """Фото атлета. Кэшируем надолго — URL содержит ?v=<photo_v>,
+    поэтому при замене фото ссылка меняется и кэш сбрасывается сам."""
+    if not USE_DB:
+        return web.Response(status=404)
+    try:
+        aid = int(r.match_info["id"])
+    except (KeyError, ValueError):
+        return web.Response(status=404)
+    async with db_pool.acquire() as c:
+        row = await c.fetchrow("SELECT photo FROM athletes WHERE id=$1", aid)
+    if not row or not row["photo"]:
+        return web.Response(status=404)
+    resp = web.Response(body=bytes(row["photo"]), content_type="image/jpeg")
+    resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    return resp
 
 async def h_stats(r):
     if r.method == "OPTIONS": return _cors(web.Response(status=204))
@@ -407,6 +466,75 @@ async def a_athlete_item(r):
         await c.execute("DELETE FROM athletes WHERE id=$1", int(r.match_info["id"]))
     return _json({"ok": True})
 
+
+# Фото атлетов -------------------------------------------------------
+async def a_photos(r):
+    """GET  — список атлетов с признаком наличия фото.
+       POST — массовая загрузка: [{filename, data(base64 jpeg)}], матчинг по имени файла.
+       DELETE ?id=N — удалить фото атлета."""
+    g = _admin_guard(r)
+    if g is not None: return g
+
+    if r.method == "GET":
+        async with db_pool.acquire() as c:
+            rows = await c.fetch(
+                """SELECT id,name,category,gender,photo_v,(photo IS NOT NULL) AS has_photo
+                   FROM athletes ORDER BY category,gender,name""")
+        return _json([{"id": x["id"], "name": x["name"], "category": x["category"],
+                       "gender": x["gender"], "has_photo": x["has_photo"],
+                       "photo_v": x["photo_v"]} for x in rows])
+
+    if r.method == "DELETE":
+        try:
+            aid = int(r.query.get("id", ""))
+        except ValueError:
+            return _json({"error": "bad_id"})
+        async with db_pool.acquire() as c:
+            await c.execute("UPDATE athletes SET photo=NULL WHERE id=$1", aid)
+        return _json({"ok": True})
+
+    # POST — массовая загрузка
+    import base64
+    d = await r.json()
+    files = d.get("files") or []
+    async with db_pool.acquire() as c:
+        rows = await c.fetch("SELECT id,name FROM athletes")
+        # индекс: ключ имени → множество id (для отсечения неоднозначных совпадений)
+        index = {}
+        for row in rows:
+            for k in name_keys(row["name"]):
+                index.setdefault(k, set()).add(row["id"])
+
+        matched, unmatched, ambiguous = [], [], []
+        for f in files:
+            fname = (f.get("filename") or "").rsplit(".", 1)[0]
+            data = f.get("data") or ""
+            hit = None
+            for k in sorted(name_keys(fname), key=len, reverse=True):
+                ids = index.get(k)
+                if ids and len(ids) == 1:
+                    hit = next(iter(ids))
+                    break
+                if ids and len(ids) > 1:
+                    hit = "AMB"
+            if hit is None:
+                unmatched.append(fname)
+                continue
+            if hit == "AMB":
+                ambiguous.append(fname)
+                continue
+            try:
+                raw = base64.b64decode(data.split(",", 1)[-1])
+            except Exception:
+                unmatched.append(fname)
+                continue
+            await c.execute(
+                "UPDATE athletes SET photo=$2, photo_v=photo_v+1 WHERE id=$1", hit, raw)
+            matched.append(fname)
+
+    return _json({"ok": True, "matched": len(matched),
+                  "unmatched": unmatched, "ambiguous": ambiguous})
+
 # Scores (сетка атлет × комплекс) -----------------------------------
 async def a_scores(r):
     g = _admin_guard(r)
@@ -502,10 +630,12 @@ async def _sched_upsert(r, sid):
     return _json({"ok": True, "id": sid})
 # ── Сборка приложения ────────────────────────────────────────────────
 def build_web_app():
-    app = web.Application()
+    # client_max_size — под пачки фото при массовой загрузке (base64)
+    app = web.Application(client_max_size=32 * 1024 * 1024)
     app.router.add_get("/", h_index)
     app.router.add_get("/admin", h_admin)
     app.router.add_get("/healthz", h_health)
+    app.router.add_get("/api/photo/{id}", h_photo)
     for path, h in [("/api/leaderboard", h_leaderboard), ("/api/wods", h_wods),
                     ("/api/schedule", h_schedule), ("/api/heats", h_heats), ("/api/stats", h_stats)]:
         app.router.add_get(path, h)
@@ -517,6 +647,7 @@ def build_web_app():
     app.router.add_route("*", "/api/admin/wods/{id}", a_wod_item)       # PUT / DELETE
     app.router.add_route("*", "/api/admin/athletes", a_athletes)        # GET / POST
     app.router.add_route("*", "/api/admin/athletes/{id}", a_athlete_item)  # DELETE
+    app.router.add_route("*", "/api/admin/photos", a_photos)            # GET / POST / DELETE
     app.router.add_route("*", "/api/admin/scores", a_scores)            # GET / POST
     app.router.add_route("*", "/api/admin/heats", a_heat_create)        # POST
     app.router.add_route("*", "/api/admin/heats/{id}", a_heat_item)     # PUT / DELETE

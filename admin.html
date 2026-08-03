@@ -54,6 +54,20 @@
     .cellpts { font-size:11px; color:var(--gold); text-align:center; margin-top:3px; font-family:'Oswald',sans-serif; }
     .muted { color:var(--hint); font-size:12px; }
     .total { font-family:'Oswald',sans-serif; font-weight:700; color:var(--gold); }
+    /* сетка фото атлетов */
+    .ph-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:12px; }
+    .ph-card { background:var(--surface2); border:1px solid var(--border); border-radius:12px; padding:10px; text-align:center; }
+    .ph-card .ph-img { width:64px; height:64px; border-radius:50%; margin:0 auto 8px; overflow:hidden; background:var(--surface);
+      display:flex; align-items:center; justify-content:center; font-family:'Oswald',sans-serif; color:var(--hint); font-size:15px; }
+    .ph-card .ph-img img { width:100%; height:100%; object-fit:cover; }
+    .ph-card .ph-name { font-size:12px; line-height:1.3; margin-bottom:6px; }
+    .ph-card .ph-meta { font-size:10px; color:var(--hint); margin-bottom:8px; text-transform:uppercase; letter-spacing:.5px; }
+    .ph-card.nophoto { border-color:rgba(224,83,61,.4); }
+    .rep-box { font-size:13px; border-radius:10px; padding:12px 14px; margin-top:8px; }
+    .rep-ok { background:rgba(63,174,107,.12); border:1px solid rgba(63,174,107,.4); }
+    .rep-warn { background:rgba(224,83,61,.1); border:1px solid rgba(224,83,61,.4); }
+    .rep-box ul { margin:6px 0 0 18px; }
+
     .toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--green); color:#08210f; font-weight:600; font-size:13px; padding:10px 18px; border-radius:10px; opacity:0; transition:opacity .2s; pointer-events:none; }
     .toast.show { opacity:1; }
     .lane-row { display:flex; gap:8px; margin-bottom:8px; }
@@ -83,6 +97,7 @@
       <button class="tab" data-pane="heats">Заходы</button>
       <button class="tab" data-pane="schedule">Расписание</button>
       <button class="tab" data-pane="scores">Результаты</button>
+      <button class="tab" data-pane="photos">Фото</button>
     </div>
 
     <!-- КОМПЛЕКСЫ -->
@@ -210,6 +225,35 @@
           <tbody id="sched-tbody"></tbody></table>
       </div>
     </div>
+
+    <!-- ФОТО -->
+    <div class="pane" id="pane-photos">
+      <div class="panel">
+        <h2>Массовая загрузка фото</h2>
+        <p class="muted" style="margin-bottom:12px">
+          Назови файлы по ФИО атлета — например <b>«Бородин Родион.jpg»</b> — и выбери их все сразу.
+          Система сама сопоставит фото с атлетами (порядок слов, регистр и отчество не важны).
+          Фото автоматически сжимаются до 256×256.
+        </p>
+        <div class="row">
+          <input type="file" id="ph-files" accept="image/*" multiple style="max-width:340px" />
+          <button class="btn" id="ph-upload">Загрузить</button>
+        </div>
+        <div id="ph-progress" class="muted" style="margin-top:12px"></div>
+        <div id="ph-report" style="margin-top:10px"></div>
+      </div>
+      <div class="panel">
+        <h2>Атлеты <span class="muted" id="ph-stat"></span></h2>
+        <div class="row" style="margin-bottom:12px">
+          <div class="field"><label>Показать</label><select id="ph-filter">
+            <option value="all">Всех</option>
+            <option value="no">Только без фото</option>
+            <option value="yes">Только с фото</option>
+          </select></div>
+        </div>
+        <div id="ph-grid" class="ph-grid"></div>
+      </div>
+    </div>
   </div>
 
   <div class="toast" id="toast"></div>
@@ -260,6 +304,7 @@
       if(t.dataset.pane==='scores') loadScores();
       if(t.dataset.pane==='heats') loadHeats();
       if(t.dataset.pane==='schedule') loadSchedAdmin();
+      if(t.dataset.pane==='photos') loadPhotos();
     });
 
     function initSelects(){
@@ -512,6 +557,89 @@
       const id=$('sched-id').value;
       await apiSend(id?'PUT':'POST','/api/admin/schedule'+(id?'/'+id:''),body);
       toast('Сохранено'); resetSchedForm(); loadSchedAdmin();
+    };
+
+    // ── ФОТО ──
+    // Сжимаем в браузере: квадрат 256×256, обрезка по центру, JPEG ~30 КБ
+    function shrinkImage(file, size = 256, quality = 0.82) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        img.onload = () => {
+          URL.revokeObjectURL(url);
+          const side = Math.min(img.width, img.height);
+          const sx = (img.width - side) / 2, sy = (img.height - side) / 2;
+          const cv = document.createElement('canvas');
+          cv.width = cv.height = size;
+          const ctx = cv.getContext('2d');
+          ctx.drawImage(img, sx, sy, side, side, 0, 0, size, size);
+          resolve(cv.toDataURL('image/jpeg', quality));
+        };
+        img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('bad image')); };
+        img.src = url;
+      });
+    }
+
+    $('ph-upload').onclick = async () => {
+      const files = [...($('ph-files').files || [])];
+      if (!files.length) { alert('Выбери файлы с фото'); return; }
+      const prog = $('ph-progress'), rep = $('ph-report');
+      rep.innerHTML = '';
+      const CHUNK = 12;
+      let done = 0, ok = 0, unmatched = [], ambiguous = [];
+      for (let i = 0; i < files.length; i += CHUNK) {
+        const slice = files.slice(i, i + CHUNK);
+        const payload = [];
+        for (const f of slice) {
+          try { payload.push({ filename: f.name, data: await shrinkImage(f) }); }
+          catch (e) { unmatched.push(f.name + ' (не изображение)'); }
+        }
+        if (payload.length) {
+          const r = await apiSend('POST', '/api/admin/photos', { files: payload });
+          if (r.error) { rep.innerHTML = `<div class="rep-box rep-warn">Ошибка загрузки: ${esc(r.error)}</div>`; return; }
+          ok += r.matched || 0;
+          unmatched = unmatched.concat(r.unmatched || []);
+          ambiguous = ambiguous.concat(r.ambiguous || []);
+        }
+        done += slice.length;
+        prog.textContent = `Обработано ${done} из ${files.length}…`;
+      }
+      prog.textContent = '';
+      let html = `<div class="rep-box rep-ok">Загружено фото: <b>${ok}</b> из ${files.length}</div>`;
+      if (unmatched.length) html += `<div class="rep-box rep-warn">Не нашли атлета для файлов (${unmatched.length}):<ul>${unmatched.map(n => `<li>${esc(n)}</li>`).join('')}</ul></div>`;
+      if (ambiguous.length) html += `<div class="rep-box rep-warn">Несколько атлетов подходят — уточни имя файла (${ambiguous.length}):<ul>${ambiguous.map(n => `<li>${esc(n)}</li>`).join('')}</ul></div>`;
+      rep.innerHTML = html;
+      $('ph-files').value = '';
+      toast(`Загружено: ${ok}`);
+      loadPhotos();
+    };
+
+    $('ph-filter').onchange = () => renderPhotoGrid();
+    let photoList = [];
+    async function loadPhotos() {
+      photoList = await apiGet('/api/admin/photos');
+      if (!Array.isArray(photoList)) { photoList = []; }
+      renderPhotoGrid();
+    }
+    function renderPhotoGrid() {
+      const f = $('ph-filter').value;
+      const withPhoto = photoList.filter(a => a.has_photo).length;
+      $('ph-stat').textContent = `— с фото ${withPhoto} из ${photoList.length}`;
+      const rows = photoList.filter(a => f === 'all' || (f === 'yes' ? a.has_photo : !a.has_photo));
+      $('ph-grid').innerHTML = rows.map(a => `
+        <div class="ph-card ${a.has_photo ? '' : 'nophoto'}">
+          <div class="ph-img">${a.has_photo
+            ? `<img src="/api/photo/${a.id}?v=${a.photo_v}" alt="">`
+            : esc((a.name || '').split(' ').slice(0, 2).map(w => w[0] || '').join('').toUpperCase())}</div>
+          <div class="ph-name">${esc(a.name)}</div>
+          <div class="ph-meta">${esc(a.category)} ${esc(a.gender)}</div>
+          ${a.has_photo ? `<button class="btn danger sm" onclick="delPhoto(${a.id})">Удалить фото</button>` : ''}
+        </div>`).join('') || '<div class="muted">Нет атлетов</div>';
+    }
+    window.delPhoto = async (id) => {
+      if (!confirm('Удалить фото атлета?')) return;
+      await apiSend('DELETE', '/api/admin/photos?id=' + id);
+      toast('Фото удалено'); loadPhotos();
     };
 
     // авто-маска чч:мм для полей времени в заходах
