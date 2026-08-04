@@ -54,6 +54,15 @@
     .cellpts { font-size:11px; color:var(--gold); text-align:center; margin-top:3px; font-family:'Oswald',sans-serif; }
     .muted { color:var(--hint); font-size:12px; }
     .total { font-family:'Oswald',sans-serif; font-weight:700; color:var(--gold); }
+    /* поиск атлета в таблице результатов */
+    .sc-search-wrap { position:relative; max-width:340px; margin-bottom:8px; }
+    .sc-search { width:100%; padding:9px 36px 9px 12px; }
+    .sc-search-clear { position:absolute; right:6px; top:50%; transform:translateY(-50%);
+      width:24px; height:24px; border:none; border-radius:50%; background:var(--border);
+      color:var(--hint); font-size:15px; line-height:1; cursor:pointer; display:none; }
+    .sc-search-clear.show { display:block; }
+    tr.sc-hidden { display:none; }
+
     /* сетка фото атлетов */
     .ph-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:12px; }
     .ph-card { background:var(--surface2); border:1px solid var(--border); border-radius:12px; padding:10px; text-align:center; }
@@ -149,6 +158,11 @@
       <div class="panel">
         <h2>Результаты <span class="muted" id="sc-context"></span></h2>
         <p class="muted" style="margin-bottom:10px">Вводи сырой результат за каждый комплекс (время «мм:сс», вес в кг, повторения). Баллы и места считаются автоматически по результатам, под ячейкой — начисленные баллы. Навигация: <b>↑ ↓</b> и <b>Enter</b> — по столбцу, <b>Tab</b> — по строке.</p>
+        <div class="sc-search-wrap">
+          <input class="sc-search" id="sc-search" placeholder="Поиск атлета по фамилии" autocomplete="off" />
+          <button class="sc-search-clear" id="sc-search-clear" type="button" aria-label="Очистить">×</button>
+        </div>
+        <div class="muted" id="sc-search-hint" style="margin-bottom:8px"></div>
         <table><thead><tr id="sc-head"></tr></thead><tbody id="sc-tbody"></tbody></table>
       </div>
       <div class="panel">
@@ -263,7 +277,8 @@
     const GENDERS = [{code:'М',label:'Мужчины'},{code:'Ж',label:'Женщины'}];
     const DAYS = ['8 августа','9 августа'];
     let PW = sessionStorage.getItem('admin_pw') || '';
-    let scCols = 0;   // число столбцов-комплексов (для навигации стрелками)
+    let scCols = 0;        // число столбцов-комплексов (для навигации стрелками)
+    let allAthletes = [];  // все атлеты — для подсказки поиска «есть в другой категории»
 
     const RTYPE = { time:'Время', reps:'Повторения', weight:'Вес' };
     const $ = id => document.getElementById(id);
@@ -392,6 +407,7 @@
     async function loadScores(){
       const cat=$('sc-cat').value, gen=$('sc-gender').value;
       $('sc-context').textContent = `— ${cat} / ${gen}`;
+      apiGet('/api/admin/athletes').then(l=>{ if(Array.isArray(l)) allAthletes = l; });
       const d = await apiGet(`/api/admin/scores?category=${encodeURIComponent(cat)}&gender=${encodeURIComponent(gen)}`);
       const wods = d.wods||[];
       $('sc-head').innerHTML = `<th>Атлет</th>${wods.map(w=>`<th>${esc(w.name)}<br><span class="muted">${esc(RTYPE[w.result_type]||'')}</span></th>`).join('')}<th>Σ баллы</th><th></th>`;
@@ -405,7 +421,7 @@
                    placeholder="${RT_PH[w.result_type]||''}" value="${esc(fmtResult(raw,w.result_type))}">
             <div class="cellpts" data-aid="${a.id}" data-wid="${w.id}">${pts!=null?pts+' балл.':'·'}</div></td>`;
         }).join('');
-        return `<tr><td>${esc(a.name)}</td>${cells}<td class="total" id="tot-${a.id}">${a.total||0}</td>
+        return `<tr data-name="${esc(a.name)}"><td>${esc(a.name)}</td>${cells}<td class="total" id="tot-${a.id}">${a.total||0}</td>
           <td><button class="btn danger sm" onclick="delAthlete(${a.id})">×</button></td></tr>`;
       }).join('') || `<tr><td colspan="${wods.length+3}" class="muted">Нет атлетов. Добавь выше.</td></tr>`;
 
@@ -426,19 +442,47 @@
           if(r.error){ toast('Ошибка ввода'); return; }
           refreshScoreNumbers();   // обновляем баллы/места на месте, без сброса фокуса
         };
-        // навигация: ↑↓ / Enter — вниз, Shift+Enter / ↑ — вверх
+        // навигация: ↑↓ / Enter — вниз, Shift+Enter / ↑ — вверх (только по видимым строкам)
         inp.onkeydown = (e)=>{
           let dir = 0;
           if(e.key==='ArrowDown' || (e.key==='Enter' && !e.shiftKey)) dir = 1;
           else if(e.key==='ArrowUp' || (e.key==='Enter' && e.shiftKey)) dir = -1;
           else return;
           e.preventDefault();
-          const inputs = [...$('sc-tbody').querySelectorAll('input.cell')];
-          const tgt = inputs[inputs.indexOf(inp) + dir*scCols];
+          const tr = inp.closest('tr');
+          const colIdx = [...tr.querySelectorAll('input.cell')].indexOf(inp);
+          let sib = tr;
+          do { sib = dir > 0 ? sib.nextElementSibling : sib.previousElementSibling; }
+          while (sib && sib.classList.contains('sc-hidden'));
+          const tgt = sib && [...sib.querySelectorAll('input.cell')][colIdx];
           if(tgt){ tgt.focus(); tgt.select(); }
         };
       });
+      applyScSearch();   // не сбрасываем активный поиск при перерисовке
     }
+
+    // ── Поиск атлета в таблице результатов ──
+    function applyScSearch(){
+      const q = ($('sc-search').value || '').trim().toLowerCase();
+      $('sc-search-clear').classList.toggle('show', !!q);
+      const rows = [...$('sc-tbody').querySelectorAll('tr[data-name]')];
+      let shown = 0;
+      rows.forEach(tr=>{
+        const hit = !q || (tr.dataset.name || '').toLowerCase().includes(q);
+        tr.classList.toggle('sc-hidden', !hit);
+        if(hit) shown++;
+      });
+      const hint = $('sc-search-hint');
+      if(!q){ hint.textContent = ''; return; }
+      if(shown){ hint.textContent = `Найдено: ${shown}`; return; }
+      // не нашли в текущей группе — подскажем, в какой категории такой атлет есть
+      const other = (allAthletes||[]).filter(a => (a.name||'').toLowerCase().includes(q));
+      hint.innerHTML = other.length
+        ? `В этой группе нет. Есть в: ${other.slice(0,4).map(a=>`<b>${esc(a.name)}</b> — ${esc(a.category)} ${esc(a.gender)}`).join('; ')}`
+        : 'Атлет с такой фамилией не найден';
+    }
+    $('sc-search').oninput = applyScSearch;
+    $('sc-search-clear').onclick = ()=>{ $('sc-search').value=''; applyScSearch(); $('sc-search').focus(); };
     // тихий пересчёт баллов/мест/сумм без перестройки таблицы (фокус сохраняется)
     async function refreshScoreNumbers(){
       const cat=$('sc-cat').value, gen=$('sc-gender').value;
