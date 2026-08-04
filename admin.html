@@ -630,7 +630,7 @@
       const prog = $('ph-progress'), rep = $('ph-report');
       rep.innerHTML = '';
       const CHUNK = 12;
-      let done = 0, ok = 0, unmatched = [], ambiguous = [];
+      let done = 0, ok = 0, unmatched = [], ambiguous = [], lastTotal = null;
       for (let i = 0; i < files.length; i += CHUNK) {
         const slice = files.slice(i, i + CHUNK);
         const payload = [];
@@ -642,6 +642,7 @@
           const r = await apiSend('POST', '/api/admin/photos', { files: payload });
           if (r.error) { rep.innerHTML = `<div class="rep-box rep-warn">Ошибка загрузки: ${esc(r.error)}</div>`; return; }
           ok += r.matched || 0;
+          if (r.total_athletes != null) lastTotal = r.total_athletes;
           unmatched = unmatched.concat(r.unmatched || []);
           ambiguous = ambiguous.concat(r.ambiguous || []);
         }
@@ -649,8 +650,12 @@
         prog.textContent = `Обработано ${done} из ${files.length}…`;
       }
       prog.textContent = '';
-      let html = `<div class="rep-box rep-ok">Загружено фото: <b>${ok}</b> из ${files.length}</div>`;
-      if (unmatched.length) html += `<div class="rep-box rep-warn">Не нашли атлета для файлов (${unmatched.length}):<ul>${unmatched.map(n => `<li>${esc(n)}</li>`).join('')}</ul></div>`;
+      let html = `<div class="rep-box rep-ok">Загружено фото: <b>${ok}</b> из ${files.length}${lastTotal!=null?` · атлетов в базе: ${lastTotal}`:''}</div>`;
+      if (unmatched.length) html += `<div class="rep-box rep-warn">Не нашли атлета для файлов (${unmatched.length}):<ul>${unmatched.map(n => {
+          if (typeof n === 'string') return `<li>${esc(n)}</li>`;
+          const near = (n.near||[]).length ? ` — похожие в базе: ${n.near.map(x=>esc(x)).join(', ')}` : ' — похожих имён в базе нет';
+          return `<li><b>${esc(n.file)}</b>${near}</li>`;
+        }).join('')}</ul></div>`;
       if (ambiguous.length) html += `<div class="rep-box rep-warn">Несколько атлетов подходят — уточни имя файла (${ambiguous.length}):<ul>${ambiguous.map(n => `<li>${esc(n)}</li>`).join('')}</ul></div>`;
       rep.innerHTML = html;
       $('ph-files').value = '';

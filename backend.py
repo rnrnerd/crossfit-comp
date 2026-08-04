@@ -538,7 +538,15 @@ async def a_photos(r):
                     else:
                         amb = True
             if hit is None:
-                (ambiguous if amb else unmatched).append(fname)
+                if amb:
+                    ambiguous.append(fname)
+                else:
+                    # диагностика: показываем ближайшие имена из базы
+                    import difflib
+                    near = difflib.get_close_matches(
+                        norm_name(fname), [norm_name(x["name"]) for x in rows], n=3, cutoff=0.4)
+                    near_orig = [x["name"] for x in rows if norm_name(x["name"]) in near]
+                    unmatched.append({"file": fname, "near": near_orig})
                 continue
             try:
                 raw = base64.b64decode(data.split(",", 1)[-1])
@@ -549,7 +557,7 @@ async def a_photos(r):
                 "UPDATE athletes SET photo=$2, photo_v=photo_v+1 WHERE id=$1", hit, raw)
             matched.append(fname)
 
-    return _json({"ok": True, "matched": len(matched),
+    return _json({"ok": True, "matched": len(matched), "total_athletes": len(rows),
                   "unmatched": unmatched, "ambiguous": ambiguous})
 
 # Scores (сетка атлет × комплекс) -----------------------------------
