@@ -203,6 +203,12 @@ def name_keys(s):
     return keys
 
 
+def word_keys(s):
+    """Значимые слова имени (от 4 букв) — для файлов вида «Задимидченко.jpg»
+    или «IMG_2481 Задимидченко.jpg». Короткие слова и инициалы отбрасываем."""
+    return {w for w in norm_name(s).split() if len(w) >= 4}
+
+
 def _place_points(place):
     return max(0, 100 - 5 * (place - 1))
 
@@ -499,29 +505,40 @@ async def a_photos(r):
     files = d.get("files") or []
     async with db_pool.acquire() as c:
         rows = await c.fetch("SELECT id,name FROM athletes")
-        # индекс: ключ имени → множество id (для отсечения неоднозначных совпадений)
-        index = {}
+        # два индекса: строгий (по имени целиком) и по отдельным словам (фамилия)
+        index, windex = {}, {}
         for row in rows:
             for k in name_keys(row["name"]):
                 index.setdefault(k, set()).add(row["id"])
+            for w in word_keys(row["name"]):
+                windex.setdefault(w, set()).add(row["id"])
 
         matched, unmatched, ambiguous = [], [], []
         for f in files:
             fname = (f.get("filename") or "").rsplit(".", 1)[0]
             data = f.get("data") or ""
-            hit = None
+            hit, amb = None, False
+            # 1) строгое совпадение имени
             for k in sorted(name_keys(fname), key=len, reverse=True):
                 ids = index.get(k)
                 if ids and len(ids) == 1:
                     hit = next(iter(ids))
                     break
                 if ids and len(ids) > 1:
-                    hit = "AMB"
+                    amb = True
+            # 2) по значимым словам: атлет, у которого есть ВСЕ слова из имени файла
             if hit is None:
-                unmatched.append(fname)
-                continue
-            if hit == "AMB":
-                ambiguous.append(fname)
+                cand = None
+                for w in word_keys(fname):
+                    ids = windex.get(w, set())
+                    cand = set(ids) if cand is None else (cand & ids)
+                if cand:
+                    if len(cand) == 1:
+                        hit = next(iter(cand))
+                    else:
+                        amb = True
+            if hit is None:
+                (ambiguous if amb else unmatched).append(fname)
                 continue
             try:
                 raw = base64.b64decode(data.split(",", 1)[-1])
