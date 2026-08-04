@@ -184,9 +184,22 @@ def _splitlist(s):
     return [x.strip() for x in (s or "").split(",") if x.strip()]
 
 
+# Латинские буквы, визуально неотличимые от кириллических: в именах файлов
+# и выгрузках они постоянно встречаются вперемешку («Сергей» с латинской C).
+_HOMOGLYPHS = str.maketrans({
+    "a": "а", "b": "в", "c": "с", "e": "е", "h": "н", "k": "к", "m": "м",
+    "o": "о", "p": "р", "t": "т", "u": "и", "x": "х", "y": "у",
+})
+# zero-width space разделяет слова → в пробел; остальные невидимые просто убираем
+_INVISIBLE = {0x200B: " "}
+_INVISIBLE.update(dict.fromkeys([0x200C, 0x200D, 0x200E, 0x200F, 0xFEFF, 0x00AD], None))
+
+
 def norm_name(s):
-    """Нормализация ФИО для сопоставления: регистр, ё→е, лишние символы."""
-    s = (s or "").lower().replace("ё", "е")
+    """Нормализация ФИО для сопоставления: регистр, ё→е, невидимые символы,
+    латинские двойники кириллицы, лишняя пунктуация и пробелы."""
+    s = (s or "").translate(_INVISIBLE).lower().replace("ё", "е")
+    s = s.translate(_HOMOGLYPHS)
     s = "".join(ch if (ch.isalpha() or ch.isspace()) else " " for ch in s)
     return " ".join(s.split())
 
@@ -546,7 +559,8 @@ async def a_photos(r):
                     near = difflib.get_close_matches(
                         norm_name(fname), [norm_name(x["name"]) for x in rows], n=3, cutoff=0.4)
                     near_orig = [x["name"] for x in rows if norm_name(x["name"]) in near]
-                    unmatched.append({"file": fname, "near": near_orig})
+                    unmatched.append({"file": fname, "near": near_orig,
+                                      "normalized": norm_name(fname)})
                 continue
             try:
                 raw = base64.b64decode(data.split(",", 1)[-1])

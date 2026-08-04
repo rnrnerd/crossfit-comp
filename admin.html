@@ -654,7 +654,8 @@
       if (unmatched.length) html += `<div class="rep-box rep-warn">Не нашли атлета для файлов (${unmatched.length}):<ul>${unmatched.map(n => {
           if (typeof n === 'string') return `<li>${esc(n)}</li>`;
           const near = (n.near||[]).length ? ` — похожие в базе: ${n.near.map(x=>esc(x)).join(', ')}` : ' — похожих имён в базе нет';
-          return `<li><b>${esc(n.file)}</b>${near}</li>`;
+          const norm = n.normalized ? `<br><span class="muted">сервер прочитал имя как: «${esc(n.normalized)}»</span>` : '';
+          return `<li><b>${esc(n.file)}</b>${near}${norm}</li>`;
         }).join('')}</ul></div>`;
       if (ambiguous.length) html += `<div class="rep-box rep-warn">Несколько атлетов подходят — уточни имя файла (${ambiguous.length}):<ul>${ambiguous.map(n => `<li>${esc(n)}</li>`).join('')}</ul></div>`;
       rep.innerHTML = html;
