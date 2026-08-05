@@ -584,16 +584,28 @@ async def a_scores(r):
     g = _admin_guard(r)
     if g is not None: return g
     if r.method == "GET":
+        # пустые category/gender = «все»: собираем по всем группам,
+        # но баллы и места по-прежнему считаются ВНУТРИ своей группы
         cat = r.query.get("category", "").strip(); gen = r.query.get("gender", "").strip()
         async with db_pool.acquire() as c:
-            wods, athletes, results, points, places = await _group_table(c, cat, gen)
-        res = []
-        for a in athletes:
-            aid = a["id"]
-            res.append({"id": aid, "name": a["name"],
-                        "results": {str(wid): v for wid, v in results[aid].items()},
-                        "points": {str(wid): p for wid, p in points[aid].items()},
-                        "total": sum(points[aid].values())})
+            if cat and gen:
+                groups = [(cat, gen)]
+            else:
+                grows = await c.fetch(
+                    """SELECT DISTINCT category,gender FROM athletes
+                       WHERE ($1='' OR category=$1) AND ($2='' OR gender=$2)
+                       ORDER BY category,gender""", cat, gen)
+                groups = [(x["category"], x["gender"]) for x in grows]
+            wods = await c.fetch("SELECT id,name,result_type,ord FROM wods ORDER BY ord,id")
+            res = []
+            for gc, gg in groups:
+                _w, athletes, results, points, places = await _group_table(c, gc, gg)
+                for a in athletes:
+                    aid = a["id"]
+                    res.append({"id": aid, "name": a["name"], "category": gc, "gender": gg,
+                                "results": {str(wid): v for wid, v in results[aid].items()},
+                                "points": {str(wid): p for wid, p in points[aid].items()},
+                                "total": sum(points[aid].values())})
         return _json({"wods": [{"id": w["id"], "name": w["name"], "result_type": w["result_type"]} for w in wods],
                       "athletes": res})
     # POST — сохранить сырой результат ячейки (или очистить, если result null/'')

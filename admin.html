@@ -329,7 +329,9 @@
       // селекты категории/пола
       const catOpts = CATS.map(c=>`<option>${esc(c)}</option>`).join('');
       const genOpts = GENDERS.map(g=>`<option value="${g.code}">${esc(g.label)}</option>`).join('');
-      $('sc-cat').innerHTML = catOpts; $('sc-gender').innerHTML = genOpts;
+      // в «Результатах» можно выбрать «все» — удобно искать атлета, не зная категории
+      $('sc-cat').innerHTML = '<option value="">— все категории —</option>' + catOpts;
+      $('sc-gender').innerHTML = '<option value="">— все —</option>' + genOpts;
       $('heat-cat').innerHTML = catOpts; $('heat-gender').innerHTML = genOpts;
       const catAll = '<option value="">— все</option>' + catOpts;
       const genAll = '<option value="">— все</option>' + genOpts;
@@ -389,6 +391,9 @@
     $('sc-load').onclick = loadScores;
     $('sc-add-athlete').onclick = async ()=>{
       const name=$('sc-new-name').value.trim(); if(!name){alert('Введи ФИО');return;}
+      if(!$('sc-cat').value || !$('sc-gender').value){
+        alert('Чтобы добавить атлета, выбери конкретную категорию и пол сверху'); return;
+      }
       await apiSend('POST','/api/admin/athletes',{name,category:$('sc-cat').value,gender:$('sc-gender').value});
       $('sc-new-name').value=''; toast('Атлет добавлен'); loadScores();
     };
@@ -406,11 +411,12 @@
 
     async function loadScores(){
       const cat=$('sc-cat').value, gen=$('sc-gender').value;
-      $('sc-context').textContent = `— ${cat} / ${gen}`;
+      const showAll = !cat || !gen;
       apiGet('/api/admin/athletes').then(l=>{ if(Array.isArray(l)) allAthletes = l; });
       const d = await apiGet(`/api/admin/scores?category=${encodeURIComponent(cat)}&gender=${encodeURIComponent(gen)}`);
       const wods = d.wods||[];
-      $('sc-head').innerHTML = `<th>Атлет</th>${wods.map(w=>`<th>${esc(w.name)}<br><span class="muted">${esc(RTYPE[w.result_type]||'')}</span></th>`).join('')}<th>Σ баллы</th><th></th>`;
+      $('sc-context').textContent = `— ${cat||'все категории'} / ${gen||'все'} · атлетов: ${(d.athletes||[]).length}`;
+      $('sc-head').innerHTML = `<th>Атлет</th>${showAll?'<th>Категория</th>':''}${wods.map(w=>`<th>${esc(w.name)}<br><span class="muted">${esc(RTYPE[w.result_type]||'')}</span></th>`).join('')}<th>Σ баллы</th><th></th>`;
       scCols = wods.length;
       $('sc-tbody').innerHTML = (d.athletes||[]).map(a=>{
         const cells = wods.map(w=>{
@@ -421,9 +427,10 @@
                    placeholder="${RT_PH[w.result_type]||''}" value="${esc(fmtResult(raw,w.result_type))}">
             <div class="cellpts" data-aid="${a.id}" data-wid="${w.id}">${pts!=null?pts+' балл.':'·'}</div></td>`;
         }).join('');
-        return `<tr data-name="${esc(a.name)}"><td>${esc(a.name)}</td>${cells}<td class="total" id="tot-${a.id}">${a.total||0}</td>
+        const catCell = showAll ? `<td class="muted">${esc(a.category||'')} ${esc(a.gender||'')}</td>` : '';
+        return `<tr data-name="${esc(a.name)}"><td>${esc(a.name)}</td>${catCell}${cells}<td class="total" id="tot-${a.id}">${a.total||0}</td>
           <td><button class="btn danger sm" onclick="delAthlete(${a.id})">×</button></td></tr>`;
-      }).join('') || `<tr><td colspan="${wods.length+3}" class="muted">Нет атлетов. Добавь выше.</td></tr>`;
+      }).join('') || `<tr><td colspan="${wods.length+4}" class="muted">Нет атлетов. Добавь выше.</td></tr>`;
 
       $('sc-tbody').querySelectorAll('input.cell').forEach(inp=>{
         const t = inp.dataset.rtype;
