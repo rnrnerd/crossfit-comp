@@ -264,7 +264,10 @@
             <option value="no">Только без фото</option>
             <option value="yes">Только с фото</option>
           </select></div>
+          <div class="field"><label>Категория</label><select id="ph-cat"></select></div>
+          <div class="field grow"><label>Поиск по фамилии</label><input id="ph-search" placeholder="начни вводить фамилию" autocomplete="off" /></div>
         </div>
+        <div class="muted" id="ph-shown" style="margin-bottom:10px"></div>
         <div id="ph-grid" class="ph-grid"></div>
       </div>
     </div>
@@ -672,17 +675,31 @@
     };
 
     $('ph-filter').onchange = () => renderPhotoGrid();
+    $('ph-cat').onchange = () => renderPhotoGrid();
+    $('ph-search').oninput = () => renderPhotoGrid();
     let photoList = [];
     async function loadPhotos() {
       photoList = await apiGet('/api/admin/photos');
       if (!Array.isArray(photoList)) { photoList = []; }
+      // заполняем список категорий по фактическим данным
+      const groups = [...new Set(photoList.map(a => `${a.category} ${a.gender}`))].sort();
+      const cur = $('ph-cat').value;
+      $('ph-cat').innerHTML = '<option value="">— все —</option>' +
+        groups.map(g => `<option value="${esc(g)}">${esc(g)}</option>`).join('');
+      if (groups.includes(cur)) $('ph-cat').value = cur;
       renderPhotoGrid();
     }
     function renderPhotoGrid() {
       const f = $('ph-filter').value;
+      const catF = $('ph-cat').value;
+      const q = ($('ph-search').value || '').trim().toLowerCase();
       const withPhoto = photoList.filter(a => a.has_photo).length;
-      $('ph-stat').textContent = `— с фото ${withPhoto} из ${photoList.length}`;
-      const rows = photoList.filter(a => f === 'all' || (f === 'yes' ? a.has_photo : !a.has_photo));
+      $('ph-stat').textContent = `— всего ${photoList.length}, с фото ${withPhoto}, без фото ${photoList.length - withPhoto}`;
+      const rows = photoList.filter(a =>
+        (f === 'all' || (f === 'yes' ? a.has_photo : !a.has_photo)) &&
+        (!catF || `${a.category} ${a.gender}` === catF) &&
+        (!q || (a.name || '').toLowerCase().includes(q)));
+      $('ph-shown').textContent = `Показано: ${rows.length} из ${photoList.length}`;
       $('ph-grid').innerHTML = rows.map(a => `
         <div class="ph-card ${a.has_photo ? '' : 'nophoto'}">
           <div class="ph-img">${a.has_photo
