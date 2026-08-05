@@ -197,8 +197,13 @@ _INVISIBLE.update(dict.fromkeys([0x200C, 0x200D, 0x200E, 0x200F, 0xFEFF, 0x00AD]
 
 def norm_name(s):
     """Нормализация ФИО для сопоставления: регистр, ё→е, невидимые символы,
-    латинские двойники кириллицы, лишняя пунктуация и пробелы."""
-    s = (s or "").translate(_INVISIBLE).lower().replace("ё", "е")
+    латинские двойники кириллицы, лишняя пунктуация и пробелы.
+
+    NFC обязателен: macOS хранит имена файлов в разложенной форме (NFD),
+    где «й» = «и» + U+0306, а «ё» = «е» + U+0308 — иначе буквы теряются."""
+    import unicodedata
+    s = unicodedata.normalize("NFC", s or "")
+    s = s.translate(_INVISIBLE).lower().replace("ё", "е")
     s = s.translate(_HOMOGLYPHS)
     s = "".join(ch if (ch.isalpha() or ch.isspace()) else " " for ch in s)
     return " ".join(s.split())
