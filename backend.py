@@ -61,6 +61,17 @@ CREATE TABLE IF NOT EXISTS athletes (
 -- фото атлета (JPEG, сжатое на клиенте) + версия для сброса кэша
 ALTER TABLE athletes ADD COLUMN IF NOT EXISTS photo BYTEA;
 ALTER TABLE athletes ADD COLUMN IF NOT EXISTS photo_v INTEGER NOT NULL DEFAULT 0;
+-- время вида «7:05» → «07:05», иначе строковая сортировка ставит его после «07:35»
+DO $$ BEGIN
+    IF to_regclass('public.heats') IS NOT NULL THEN
+        UPDATE heats SET start_time     = '0' || start_time     WHERE start_time     ~ '^[0-9]:[0-9]{2}$';
+        UPDATE heats SET briefing_start = '0' || briefing_start WHERE briefing_start ~ '^[0-9]:[0-9]{2}$';
+        UPDATE heats SET briefing_end   = '0' || briefing_end   WHERE briefing_end   ~ '^[0-9]:[0-9]{2}$';
+    END IF;
+    IF to_regclass('public.schedule') IS NOT NULL THEN
+        UPDATE schedule SET time = '0' || time WHERE time ~ '^[0-9]:[0-9]{2}$';
+    END IF;
+END $$;
 CREATE TABLE IF NOT EXISTS wods (
     id          SERIAL PRIMARY KEY,
     ord         INTEGER NOT NULL DEFAULT 0,
@@ -182,6 +193,28 @@ def _json(data):
 
 def _splitlist(s):
     return [x.strip() for x in (s or "").split(",") if x.strip()]
+
+
+def _tmin(s):
+    """«7:05», «07:05», «7.05» → минуты от полуночи. Мусор → в конец списка."""
+    import re
+    m = re.match(r"^\s*(\d{1,2})\s*[:.\-\s]?\s*(\d{2})\s*$", str(s or ""))
+    if not m:
+        return 10 ** 6
+    return int(m.group(1)) * 60 + int(m.group(2))
+
+
+def norm_time(s):
+    """Приводит время к виду ЧЧ:ММ («7:00» → «07:00»), чтобы всё выглядело одинаково."""
+    v = _tmin(s)
+    return str(s or "").strip() if v >= 10 ** 6 else f"{v // 60:02d}:{v % 60:02d}"
+
+
+def _daykey(s):
+    """Ключ дня для сортировки: вытаскиваем число («8 августа» → 8)."""
+    import re
+    m = re.search(r"\d+", str(s or ""))
+    return (int(m.group()) if m else 10 ** 6, str(s or ""))
 
 
 # Латинские буквы, визуально неотличимые от кириллических: в именах файлов
@@ -316,8 +349,10 @@ async def get_schedule():
     if not USE_DB:
         return sample_data.SCHEDULE
     async with db_pool.acquire() as c:
-        rows = await c.fetch("SELECT id,day,time,title,location,category,gender FROM schedule ORDER BY day,time,id")
-        return [dict(r) for r in rows]
+        rows = await c.fetch("SELECT id,day,time,title,location,category,gender FROM schedule")
+        items = [dict(r) for r in rows]
+        items.sort(key=lambda s: (_daykey(s["day"]), _tmin(s["time"]), s["id"]))
+        return items
 
 
 async def get_heats():
@@ -350,6 +385,8 @@ async def get_heats():
                         "briefing_start": h["briefing_start"], "briefing_end": h["briefing_end"],
                         "start_time": h["start_time"], "location": h["location"],
                         "athletes": alist})
+        # сортируем по реальному времени, а не по строке
+        out.sort(key=lambda h: (_daykey(h["day"]), _tmin(h["start_time"]), h["heat"] or 0))
         return out
 
 
@@ -638,6 +675,8 @@ async def a_heat_item(r):
     return await _heat_upsert(r, int(r.match_info["id"]))
 async def _heat_upsert(r, hid):
     d = await r.json()
+    for k in ("briefing_start", "briefing_end", "start_time"):
+        d[k] = norm_time(d.get(k, ""))
     async with db_pool.acquire() as c:
         if hid is None:
             hid = await c.fetchval(
@@ -672,7 +711,7 @@ async def a_sched_item(r):
     return await _sched_upsert(r, int(r.match_info["id"]))
 async def _sched_upsert(r, sid):
     d = await r.json()
-    vals = (d.get("day", ""), d.get("time", ""), d.get("title", ""), d.get("location", ""),
+    vals = (d.get("day", ""), norm_time(d.get("time", "")), d.get("title", ""), d.get("location", ""),
             d.get("category", ""), d.get("gender", ""))
     async with db_pool.acquire() as c:
         if sid is None:
