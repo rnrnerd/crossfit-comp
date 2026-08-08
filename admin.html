@@ -62,6 +62,7 @@
       color:var(--hint); font-size:15px; line-height:1; cursor:pointer; display:none; }
     .sc-search-clear.show { display:block; }
     tr.sc-hidden { display:none; }
+    td.cell-na { text-align:center; color:var(--border); }
 
     /* сетка фото атлетов */
     .ph-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:12px; }
@@ -425,6 +426,9 @@
         const cells = wods.map(w=>{
           const raw = a.results[w.id];
           const pts = a.points[w.id];
+          // комплекс не относится к категории/полу этого атлета — ячейка неактивна
+          if (Array.isArray(a.wod_ids) && !a.wod_ids.includes(w.id))
+            return `<td class="cell-na">—</td>`;
           return `<td>
             <input class="cell" type="text" data-aid="${a.id}" data-wid="${w.id}" data-rtype="${w.result_type}"
                    placeholder="${RT_PH[w.result_type]||''}" value="${esc(fmtResult(raw,w.result_type))}">

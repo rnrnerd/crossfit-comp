@@ -280,9 +280,19 @@ def rank_places(pairs, direction):
     return out
 
 
+def wod_applies(w, category, gender):
+    """Относится ли комплекс к группе. Пустой список категорий/полов = «для всех»."""
+    cats = _splitlist(w["categories"])
+    gens = _splitlist(w["genders"])
+    return (not cats or category in cats) and (not gens or gender in gens)
+
+
 async def _group_table(c, category, gender):
-    """Считает по группе (категория+пол): сырые результаты + очки по каждому комплексу."""
-    wods = await c.fetch("SELECT id,name,result_type,ord FROM wods ORDER BY ord,id")
+    """Считает по группе (категория+пол): сырые результаты + очки по каждому комплексу.
+    Комплексы берём только те, что относятся к этой категории/полу."""
+    all_wods = await c.fetch(
+        "SELECT id,name,result_type,ord,categories,genders FROM wods ORDER BY ord,id")
+    wods = [w for w in all_wods if wod_applies(w, category, gender)]
     athletes = await c.fetch(
         """SELECT id, name, photo_v, (photo IS NOT NULL) AS has_photo
            FROM athletes WHERE category=$1 AND gender=$2 ORDER BY name""", category, gender)
@@ -633,13 +643,18 @@ async def a_scores(r):
                        WHERE ($1='' OR category=$1) AND ($2='' OR gender=$2)
                        ORDER BY category,gender""", cat, gen)
                 groups = [(x["category"], x["gender"]) for x in grows]
-            wods = await c.fetch("SELECT id,name,result_type,ord FROM wods ORDER BY ord,id")
+            all_wods = await c.fetch(
+                "SELECT id,name,result_type,ord,categories,genders FROM wods ORDER BY ord,id")
+            # для конкретной группы показываем только её комплексы, для «всех» — все
+            wods = [w for w in all_wods if wod_applies(w, cat, gen)] if (cat and gen) else list(all_wods)
             res = []
             for gc, gg in groups:
-                _w, athletes, results, points, places = await _group_table(c, gc, gg)
+                gw, athletes, results, points, places = await _group_table(c, gc, gg)
+                gw_ids = [w["id"] for w in gw]     # какие комплексы применимы к этой группе
                 for a in athletes:
                     aid = a["id"]
                     res.append({"id": aid, "name": a["name"], "category": gc, "gender": gg,
+                                "wod_ids": gw_ids,
                                 "results": {str(wid): v for wid, v in results[aid].items()},
                                 "points": {str(wid): p for wid, p in points[aid].items()},
                                 "total": sum(points[aid].values())})
