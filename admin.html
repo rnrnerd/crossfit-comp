@@ -133,6 +133,11 @@
           <div class="field"><label>Категории</label><div class="checks" id="wod-cats"></div></div>
           <div class="field"><label>Пол</label><div class="checks" id="wod-genders"></div></div>
         </div>
+        <div class="field grow" style="margin-top:12px">
+          <label>Баллы по местам (необязательно)</label>
+          <input id="wod-ptable" placeholder="пусто = обычная схема 100, 95, 90, 85… (шаг 5)" />
+          <span class="muted" style="font-size:11px">Через запятую, начиная с 1-го места. Например для финала: <b>100,90,80,70,60,50,40,30,20,15,10,5</b>. Места сверх списка получают 0.</span>
+        </div>
         <div class="field grow" style="margin-top:12px"><label>Описание</label><textarea id="wod-desc" rows="4" placeholder="21-15-9:&#10;Трастеры…"></textarea></div>
         <div class="row" style="margin-top:14px">
           <button class="btn" id="wod-save">Сохранить</button>
@@ -141,7 +146,7 @@
       </div>
       <div class="panel">
         <h2>Список комплексов</h2>
-        <table><thead><tr><th>#</th><th>Название</th><th>День</th><th>Результат</th><th>Кап</th><th>Кат.</th><th>Пол</th><th></th></tr></thead>
+        <table><thead><tr><th>#</th><th>Название</th><th>День</th><th>Результат</th><th>Кап</th><th>Кат.</th><th>Пол</th><th>Баллы</th><th></th></tr></thead>
           <tbody id="wods-tbody"></tbody></table>
       </div>
     </div>
@@ -351,11 +356,12 @@
           <td>${esc(RTYPE[w.result_type]||w.result_type||'')}</td><td>${esc(w.time_cap)}</td>
           <td>${esc((w.categories||[]).join(', ')||'все')}</td>
           <td>${esc((w.genders||[]).join(', ')||'все')}</td>
+          <td class="muted" style="font-size:11px">${w.points_table ? esc(w.points_table) : 'шаг 5'}</td>
           <td style="white-space:nowrap">
             <button class="btn ghost sm" onclick='editWod(${JSON.stringify(w)})'>Ред.</button>
             <button class="btn danger sm" onclick="delWod(${w.id})">Удал.</button>
           </td>
-        </tr>`).join('') || '<tr><td colspan="8" class="muted">Пока пусто</td></tr>';
+        </tr>`).join('') || '<tr><td colspan="9" class="muted">Пока пусто</td></tr>';
       // datalist для заходов
       $('wod-names').innerHTML = wods.map(w=>`<option value="${esc(w.name)}">`).join('');
     }
@@ -364,6 +370,7 @@
       $('wod-id').value=w.id; $('wod-name').value=w.name; $('wod-order').value=w.order;
       $('wod-day').value=w.day||'8 августа'; $('wod-scoring').value=w.scoring; $('wod-cap').value=w.time_cap;
       $('wod-rtype').value=w.result_type||'reps'; $('wod-desc').value=w.description;
+      $('wod-ptable').value=w.points_table||'';
       $('wod-cats').querySelectorAll('input').forEach(i=>i.checked=(w.categories||[]).includes(i.value));
       $('wod-genders').querySelectorAll('input').forEach(i=>i.checked=(w.genders||[]).includes(i.value));
       window.scrollTo(0,0);
@@ -374,6 +381,7 @@
       $('wod-form-title').textContent='Добавить комплекс';
       $('wod-id').value=''; $('wod-name').value=''; $('wod-order').value='1'; $('wod-day').value='8 августа';
       $('wod-scoring').value=''; $('wod-cap').value=''; $('wod-rtype').value='time'; $('wod-desc').value='';
+      $('wod-ptable').value='';
       $('wod-cats').querySelectorAll('input').forEach(i=>i.checked=false);
       $('wod-genders').querySelectorAll('input').forEach(i=>i.checked=false);
     }
@@ -382,6 +390,7 @@
         order:Number($('wod-order').value||0), name:$('wod-name').value.trim(),
         scoring:$('wod-scoring').value.trim(), time_cap:$('wod-cap').value.trim(),
         day:$('wod-day').value, result_type:$('wod-rtype').value, description:$('wod-desc').value,
+        points_table:$('wod-ptable').value,
         categories:[...$('wod-cats').querySelectorAll('input:checked')].map(i=>i.value),
         genders:[...$('wod-genders').querySelectorAll('input:checked')].map(i=>i.value),
       };

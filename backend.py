@@ -93,6 +93,8 @@ CREATE TABLE IF NOT EXISTS scores (
 );
 -- миграции для уже существующих баз
 ALTER TABLE wods ADD COLUMN IF NOT EXISTS result_type TEXT NOT NULL DEFAULT 'reps';
+-- своя шкала баллов по местам («100,90,80,…»). Пусто = обычная формула 100−5×(место−1)
+ALTER TABLE wods ADD COLUMN IF NOT EXISTS points_table TEXT NOT NULL DEFAULT '';
 DO $$ BEGIN
     IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='scores' AND column_name='points') THEN
         ALTER TABLE scores RENAME COLUMN points TO result;
@@ -260,7 +262,25 @@ def word_keys(s):
     return {w for w in norm_name(s).split() if len(w) >= 4}
 
 
-def _place_points(place):
+def parse_points_table(s):
+    """«100,90,80,…» → [100, 90, 80, …]. Пусто/мусор → None (обычная формула)."""
+    vals = []
+    for part in str(s or "").replace(";", ",").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            vals.append(max(0, int(float(part))))
+        except ValueError:
+            return None
+    return vals or None
+
+
+def _place_points(place, table=None):
+    """Баллы за место. Если у комплекса задана своя шкала — берём из неё
+    (места сверх шкалы = 0), иначе обычная формула с шагом 5."""
+    if table:
+        return table[place - 1] if 1 <= place <= len(table) else 0
     return max(0, 100 - 5 * (place - 1))
 
 
@@ -291,7 +311,7 @@ async def _group_table(c, category, gender):
     """Считает по группе (категория+пол): сырые результаты + очки по каждому комплексу.
     Комплексы берём только те, что относятся к этой категории/полу."""
     all_wods = await c.fetch(
-        "SELECT id,name,result_type,ord,categories,genders FROM wods ORDER BY ord,id")
+        "SELECT id,name,result_type,ord,categories,genders,points_table FROM wods ORDER BY ord,id")
     wods = [w for w in all_wods if wod_applies(w, category, gender)]
     athletes = await c.fetch(
         """SELECT id, name, photo_v, (photo IS NOT NULL) AS has_photo
@@ -307,10 +327,11 @@ async def _group_table(c, category, gender):
     places = {aid: {} for aid in aids}
     for w in wods:
         direction = "asc" if w["result_type"] == "time" else "desc"
+        ptable = parse_points_table(w["points_table"])   # своя шкала, если задана
         pairs = [(aid, results[aid][w["id"]]) for aid in aids if w["id"] in results[aid]]
         for aid, place in rank_places(pairs, direction).items():
             places[aid][w["id"]] = place
-            points[aid][w["id"]] = _place_points(place)
+            points[aid][w["id"]] = _place_points(place, ptable)
     return wods, athletes, results, points, places
 
 
@@ -351,7 +372,7 @@ async def get_wods():
         rows = await c.fetch("SELECT * FROM wods ORDER BY ord, id")
         return [{"id": r["id"], "order": r["ord"], "name": r["name"], "scoring": r["scoring"],
                  "time_cap": r["time_cap"], "day": r["day"], "description": r["description"],
-                 "result_type": r["result_type"],
+                 "result_type": r["result_type"], "points_table": r["points_table"],
                  "categories": _splitlist(r["categories"]), "genders": _splitlist(r["genders"])} for r in rows]
 
 
@@ -498,19 +519,22 @@ async def _wod_upsert(r, wid):
     rtype = d.get("result_type", "reps")
     if rtype not in ("time", "weight", "reps"):
         rtype = "reps"
+    # своя шкала баллов: нормализуем ввод, некорректный — не сохраняем (останется обычная формула)
+    ptab = parse_points_table(d.get("points_table", ""))
+    ptab_s = ",".join(str(v) for v in ptab) if ptab else ""
     async with db_pool.acquire() as c:
         if wid is None:
             wid = await c.fetchval(
-                """INSERT INTO wods (ord,name,scoring,time_cap,day,description,categories,genders,result_type)
-                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id""",
+                """INSERT INTO wods (ord,name,scoring,time_cap,day,description,categories,genders,result_type,points_table)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id""",
                 int(d.get("order", 0) or 0), d.get("name", ""), d.get("scoring", ""), d.get("time_cap", ""),
-                d.get("day", ""), d.get("description", ""), cats, gens, rtype)
+                d.get("day", ""), d.get("description", ""), cats, gens, rtype, ptab_s)
         else:
             await c.execute(
                 """UPDATE wods SET ord=$2,name=$3,scoring=$4,time_cap=$5,day=$6,description=$7,
-                   categories=$8,genders=$9,result_type=$10 WHERE id=$1""",
+                   categories=$8,genders=$9,result_type=$10,points_table=$11 WHERE id=$1""",
                 wid, int(d.get("order", 0) or 0), d.get("name", ""), d.get("scoring", ""), d.get("time_cap", ""),
-                d.get("day", ""), d.get("description", ""), cats, gens, rtype)
+                d.get("day", ""), d.get("description", ""), cats, gens, rtype, ptab_s)
     return _json({"ok": True, "id": wid})
 # Athletes ----------------------------------------------------------
 async def a_athletes(r):
