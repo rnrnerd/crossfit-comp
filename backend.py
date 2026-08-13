@@ -361,7 +361,13 @@ async def get_leaderboard(category, gender):
             avatar = f"/api/photo/{aid}?v={a['photo_v']}" if a["has_photo"] else ""
             out.append({"name": a["name"], "category": category, "gender": gender,
                         "points": total, "avatar": avatar, "wods": wlist})
-        out.sort(key=lambda r: r["points"], reverse=True)
+        # При равной сумме баллов выше тот, у кого лучше место: сравниваем
+        # списки мест по возрастанию (лучшее первым), при равенстве — следующее.
+        def _rank_key(r):
+            best = sorted(w["place"] for w in r["wods"] if w.get("place"))
+            return (-r["points"], best)
+
+        out.sort(key=_rank_key)
         return out
 
 
